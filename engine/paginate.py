@@ -9,7 +9,7 @@ Engine selection (in priority order):
 
 import os
 
-from . import docx_trim, word_com, word_markers
+from . import docx_trim, lo_paginate, word_com, word_markers
 from .docx_trim import build_units, _q
 
 
@@ -80,5 +80,13 @@ def paginate_docx(docx_path):
     except Exception:
         pass
 
-    # 3) Explicit page/section break counting.
+    # 3) LibreOffice as a real layout engine (Linux/Render, best fidelity).
+    try:
+        res = lo_paginate.paginate_with_libreoffice(docx_path)
+        if res is not None:
+            return res
+    except Exception:
+        pass
+
+    # 4) Explicit page/section break counting.
     return _explicit_break_pagination(docx_path)

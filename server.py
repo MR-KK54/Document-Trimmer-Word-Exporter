@@ -18,7 +18,7 @@ import uuid
 from flask import Flask, jsonify, request, send_file, send_from_directory, Response
 from lxml import etree
 
-from engine import convert, naming, paginate, pdf_split, ranges, docx_trim
+from engine import convert, naming, paginate, pdf_split, ranges, docx_trim, verify
 from engine.renderer import Renderer
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -322,6 +322,8 @@ def _process_one(job, src_path):
             split_docx = os.path.join(work_dir, "_split_tmp.docx")
             docx_trim.split_docx_range(docx_path, start, end, boundaries, split_docx)
             convert.convert_docx_to(split_docx, target_ext, out)
+            if _verify_enabled():
+                _verify_output(job, docx_path, out, start, end, work_dir)
             outputs.append(name)
         except Exception as e:
             job["errors"].append(f"{os.path.basename(src_path)} pages {start}-{end}: {e}")
@@ -334,6 +336,41 @@ def _process_one(job, src_path):
 def _check_cancel(job):
     if job["cancel"]:
         raise _Cancelled()
+
+
+def _verify_enabled():
+    return os.environ.get("VERIFY_EXPORT", "1") not in ("0", "false", "off")
+
+
+def _verify_output(job, src_path, out_path, start, end, work_dir):
+    """Render-compare the exported file against the source pages; auto-correct."""
+    _log(job, "info", f"Verifying {os.path.basename(out_path)} against source pages {start}-{end}...")
+    vdir = os.path.join(work_dir, "verify")
+    try:
+        report = verify.verify_export(src_path, out_path, start, end, vdir)
+    except Exception as e:
+        _log(job, "warn", f"Verification skipped for {os.path.basename(out_path)}: {e}")
+        return
+    pc = report["page_count"]
+    if pc["actual"] != pc["expected"]:
+        _log(job, "error",
+             f"{os.path.basename(out_path)} FAIL: expected {pc['expected']} page(s), "
+             f"got {pc['actual']}.")
+    if report["corrected"]:
+        _log(job, "info",
+             f"{os.path.basename(out_path)} auto-corrected ({report['corrected']} pass(es)).")
+    for entry in report["pages"]:
+        if not entry["match"]:
+            _log(job, "warn",
+                 f"{os.path.basename(out_path)} page {entry['page']} differs from "
+                 f"source page {entry['source_page']}: {entry['detail']}")
+        elif not entry["text_match"]:
+            _log(job, "warn",
+                 f"{os.path.basename(out_path)} page {entry['page']} text mismatch "
+                 f"vs source page {entry['source_page']}.")
+    if report["pass"]:
+        _log(job, "success",
+             f"{os.path.basename(out_path)} verified: {pc['actual']} page(s) match source.")
 
 
 class _Cancelled(Exception):
