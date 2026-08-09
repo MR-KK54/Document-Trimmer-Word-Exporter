@@ -5,6 +5,7 @@ const state = {
   jobId: null,
   pollTimer: null,
   lastLogCount: 0,
+  blobs: {},      // name -> {blob, size} cached as soon as a job completes
 };
 
 const $ = (id) => document.getElementById(id);
@@ -412,12 +413,27 @@ function applyJob(job) {
     job.errors.forEach((e) => appendLog("error", e));
     if (job.status === "done") {
       setStatus(`Finished: ${job.success_count} succeeded, ${job.fail_count} failed.`, "success");
+      prefetchOutputs(job);
     } else if (job.status === "cancelled") {
       setStatus("Job cancelled.", "warn");
     } else {
       setStatus("Job failed to complete.", "error");
     }
     state.lastLogCount = 0;
+  }
+}
+
+async function prefetchOutputs(job) {
+  for (const name of job.outputs) {
+    try {
+      const resp = await fetch("/api/download/" + job.job_id + "/" + encodeURIComponent(name));
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const blob = await resp.blob();
+      state.blobs[name] = blob;
+      appendLog("info", `Cached ${name} (${(blob.size / 1024).toFixed(1)} KB) for download.`);
+    } catch (e) {
+      appendLog("warn", `Could not cache ${name}: ${e.message}`);
+    }
   }
 }
 
@@ -460,9 +476,12 @@ function renderResults(job) {
 
 async function downloadViaBlob(jobId, name) {
   try {
-    const resp = await fetch("/api/download/" + jobId + "/" + encodeURIComponent(name));
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const blob = await resp.blob();
+    let blob = state.blobs[name];
+    if (!blob) {
+      const resp = await fetch("/api/download/" + jobId + "/" + encodeURIComponent(name));
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      blob = await resp.blob();
+    }
     const urlObj = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = urlObj;
@@ -491,6 +510,7 @@ async function resetSession() {
   state.jobId = null;
   state.lastLogCount = 0;
   state.preview = null;
+  state.blobs = {};
 
   $("presetSelect").value = "All Pages (Single Doc)";
   $("rangeInput").value = "1-end";
