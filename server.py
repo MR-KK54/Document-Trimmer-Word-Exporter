@@ -406,6 +406,7 @@ def api_job(job_id):
     if not job:
         return jsonify({"error": "Job not found"}), 404
     return jsonify({
+        "job_id": job_id,
         "status": job["status"],
         "current_status": job["current_status"],
         "completed": job["completed"],

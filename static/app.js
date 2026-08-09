@@ -424,9 +424,10 @@ function applyJob(job) {
 }
 
 async function prefetchOutputs(job) {
+  const jid = job.job_id || state.jobId;
   for (const name of job.outputs) {
     try {
-      const resp = await fetch("/api/download/" + job.job_id + "/" + encodeURIComponent(name));
+      const resp = await fetch("/api/download/" + jid + "/" + encodeURIComponent(name));
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       const blob = await resp.blob();
       state.blobs[name] = blob;
@@ -448,6 +449,7 @@ function renderResults(job) {
   }
 
   const single = job.outputs.length === 1;
+  const jid = job.job_id || state.jobId;
   const saveAllBtn = document.createElement("button");
   saveAllBtn.type = "button";
   saveAllBtn.className = "btn save-all";
@@ -460,15 +462,15 @@ function renderResults(job) {
     row.className = "result-row result-actions";
     const link = document.createElement("a");
     link.className = "btn save";
-    link.href = "/api/download/" + job.job_id + "/" + encodeURIComponent(name);
+    link.href = "/api/download/" + jid + "/" + encodeURIComponent(name);
     link.download = name;
     link.textContent = "Save: " + name;
-    link.onclick = (e) => { e.preventDefault(); downloadViaBlob(job.job_id, name); };
+    link.onclick = (e) => { e.preventDefault(); downloadViaBlob(jid, name); };
     const prevBtn = document.createElement("button");
     prevBtn.type = "button";
     prevBtn.className = "btn prev-out";
     prevBtn.textContent = "Preview";
-    prevBtn.onclick = () => showOutputPreview(job.job_id, name);
+    prevBtn.onclick = () => showOutputPreview(job.job_id || state.jobId, name);
     row.append(link, prevBtn);
     box.appendChild(row);
   });
@@ -497,8 +499,9 @@ async function downloadViaBlob(jobId, name) {
 }
 
 function saveAllFiles(job, single) {
+  const jid = job.job_id || state.jobId;
   job.outputs.forEach((name, i) => {
-    setTimeout(() => downloadViaBlob(job.job_id, name), i * 250);
+    setTimeout(() => downloadViaBlob(jid, name), i * 250);
   });
 }
 
