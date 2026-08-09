@@ -34,35 +34,26 @@ _CANDIDATES = [
 
 _soffice_cache = None
 _soffice_checked = False
+_soffice_install_tried = False
 
 
-def find_soffice():
-    """Return the soffice binary path or None if LibreOffice is unavailable."""
-    global _soffice_cache, _soffice_checked
-    if _soffice_checked:
-        return _soffice_cache
-
+def _detect_soffice():
+    """Locate an existing soffice binary without attempting an install."""
     env = os.environ.get("SOFFICE_BIN")
     if env and shutil.which(env):
-        _soffice_cache = env
-        _soffice_checked = True
-        return _soffice_cache
+        return env
 
     for c in _CANDIDATES:
         if os.path.sep in c:
             if os.path.exists(c):
-                _soffice_cache = c
-                _soffice_checked = True
-                return _soffice_cache
+                return c
         else:
             p = shutil.which(c)
             if p:
-                _soffice_cache = p
-                _soffice_checked = True
-                return _soffice_cache
+                return p
 
     # Last resort: recursive scan of common LibreOffice install roots.
-    for root in ("/usr/lib", "/usr/bin", "/opt", "/usr/local"):
+    for root in ("/usr/lib", "/usr/bin", "/opt", "/usr/local", "/snap"):
         if not os.path.isdir(root):
             continue
         try:
@@ -74,14 +65,71 @@ def find_soffice():
                 if len(hits) >= 1:
                     break
             if hits:
-                _soffice_cache = hits[0]
-                _soffice_checked = True
-                return _soffice_cache
+                return hits[0]
         except Exception:
             continue
-    _soffice_cache = None
-    _soffice_checked = True
     return None
+
+
+def _try_install_soffice():
+    """Best-effort runtime install of LibreOffice when missing (Linux/Render).
+
+    Covers deployments that did not run the Dockerfile (e.g. Render buildpack
+    services) where apt/root access is available. Runs at most once per process
+    and is guarded so overlapping requests do not fight each other.
+    """
+    global _soffice_install_tried
+    if _soffice_install_tried or os.name == "nt":
+        return
+    _soffice_install_tried = True
+    try:
+        import getpass
+
+        if getpass.getuser() != "root":
+            return
+    except Exception:
+        return
+    if not os.path.exists("/usr/bin/apt-get"):
+        return
+    try:
+        print("LibreOffice not found - attempting runtime install (this may take a while)...")
+        subprocess.run(
+            ["apt-get", "update", "-qq"],
+            capture_output=True, text=True, timeout=300,
+        )
+        subprocess.run(
+            [
+                "apt-get", "install", "-y", "--no-install-recommends",
+                "libreoffice-writer", "libreoffice-core", "libreoffice-common",
+                "libreoffice-style-colibre", "fonts-dejavu", "fonts-liberation",
+            ],
+            capture_output=True, text=True, timeout=900,
+        )
+        print("LibreOffice runtime install finished.")
+    except Exception as e:
+        print("LibreOffice runtime install failed:", e)
+
+
+def find_soffice():
+    """Return the soffice binary path or None if LibreOffice is unavailable.
+
+    If LibreOffice is not installed (Linux), a single best-effort runtime
+    install is attempted so previews, pagination and verification keep working
+    on servers that were deployed without the Dockerfile.
+    """
+    global _soffice_cache, _soffice_checked
+    if _soffice_checked:
+        return _soffice_cache
+    with _lock:
+        if _soffice_checked:
+            return _soffice_cache
+        found = _detect_soffice()
+        if found is None:
+            _try_install_soffice()
+            found = _detect_soffice()
+        _soffice_cache = found
+        _soffice_checked = True
+        return _soffice_cache
 
 
 def soffice_available():
