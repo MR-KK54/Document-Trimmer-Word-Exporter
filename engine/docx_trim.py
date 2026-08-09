@@ -271,23 +271,22 @@ def _build_new_body(original_body, us, ue, break_unit_indices):
             new_children.pop()
 
     # Final section properties -------------------------------------------------
+    final_sectpr = None
     if replacement_final_sectpr is not None:
-        new_body.append(replacement_final_sectpr)
+        final_sectpr = replacement_final_sectpr
     else:
         governing, _ = _governing_sectpr(original_body, units, ue)
         if governing is not None and governing is not _find_final_sectpr(original_body):
-            new_body.append(deepcopy_or_none(governing))
+            final_sectpr = deepcopy_or_none(governing)
         else:
             final = _find_final_sectpr(original_body)
             if final is not None:
-                new_body.append(deepcopy_or_none(final))
+                final_sectpr = deepcopy_or_none(final)
 
     for nc in new_children:
         new_body.append(nc)
-    if _find_final_sectpr(new_body) is None and len(new_body) and new_body[-1].tag != _q("sectPr"):
-        final = _find_final_sectpr(original_body)
-        if final is not None:
-            new_body.append(deepcopy_or_none(final))
+    if final_sectpr is not None:
+        new_body.append(final_sectpr)
 
     return new_body
 

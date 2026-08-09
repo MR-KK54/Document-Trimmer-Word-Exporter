@@ -356,6 +356,8 @@ def _verify_output(job, src_path, out_path, start, end, work_dir):
         _log(job, "error",
              f"{os.path.basename(out_path)} FAIL: expected {pc['expected']} page(s), "
              f"got {pc['actual']}.")
+    for se in report.get("structural_errors", []):
+        _log(job, "error", f"{os.path.basename(out_path)} structural defect: {se}")
     if report["corrected"]:
         _log(job, "info",
              f"{os.path.basename(out_path)} auto-corrected ({report['corrected']} pass(es)).")

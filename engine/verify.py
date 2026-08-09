@@ -132,6 +132,8 @@ def strip_trailing_breaks(path):
         changed = False
         while children:
             last = children[-1]
+            if last.tag == docx_trim._q("sectPr"):
+                break  # body-level section properties must be kept last
             if last.tag == docx_trim._q("p"):
                 if docx_trim._is_section_break_paragraph(last):
                     break  # section-property paragraph is meaningful
@@ -181,6 +183,31 @@ def strip_trailing_breaks(path):
         return path
 
 
+def structural_check(path):
+    """Validate OOXML structure that Word requires: returns list of error strings."""
+    import zipfile
+
+    from lxml import etree
+
+    from . import docx_trim
+
+    errors = []
+    try:
+        with zipfile.ZipFile(path) as z:
+            root = etree.fromstring(z.read("word/document.xml"))
+    except Exception as e:
+        return ["document.xml unreadable: %s" % e]
+    body = root.find(docx_trim._q("body"))
+    if body is None:
+        return ["no w:body"]
+    direct_sectpr = [c for c in body if c.tag == docx_trim._q("sectPr")]
+    if len(direct_sectpr) > 1:
+        errors.append("multiple body-level sectPr (%d)" % len(direct_sectpr))
+    if not direct_sectpr:
+        errors.append("missing body-level sectPr")
+    return errors
+
+
 def verify_export(src_path, out_path, start_page, end_page, work_dir=None):
     """Compare exported pages against the source pages.
 
@@ -201,7 +228,15 @@ def verify_export(src_path, out_path, start_page, end_page, work_dir=None):
         "pages": [],
         "corrected": 0,
         "note": "",
+        "structural_errors": [],
     }
+
+    structural = structural_check(out_path)
+    report["structural_errors"] = structural
+    if structural:
+        report["pass"] = False
+        report["note"] = "; ".join(structural)
+        return report
 
     try:
         actual = _page_count(out_path, work_dir)
