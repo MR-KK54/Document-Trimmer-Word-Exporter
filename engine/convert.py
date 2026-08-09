@@ -60,6 +60,25 @@ def find_soffice():
                 _soffice_cache = p
                 _soffice_checked = True
                 return _soffice_cache
+
+    # Last resort: recursive scan of common LibreOffice install roots.
+    for root in ("/usr/lib", "/usr/bin", "/opt", "/usr/local"):
+        if not os.path.isdir(root):
+            continue
+        try:
+            hits = []
+            for dirpath, dirnames, filenames in os.walk(root):
+                for fn in filenames:
+                    if fn in ("soffice", "soffice.bin"):
+                        hits.append(os.path.join(dirpath, fn))
+                if len(hits) >= 1:
+                    break
+            if hits:
+                _soffice_cache = hits[0]
+                _soffice_checked = True
+                return _soffice_cache
+        except Exception:
+            continue
     _soffice_cache = None
     _soffice_checked = True
     return None
