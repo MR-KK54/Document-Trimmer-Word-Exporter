@@ -19,39 +19,49 @@ _lock = threading.Lock()
 _CANDIDATES = [
     "soffice",
     "libreoffice",
+    "soffice.bin",
     "C:\\Program Files\\LibreOffice\\program\\soffice.exe",
     "C:\\Program Files (x86)\\LibreOffice\\program\\soffice.exe",
     "/usr/bin/soffice",
+    "/usr/local/bin/soffice",
     "/usr/lib/libreoffice/program/soffice",
     "/opt/libreoffice/program/soffice",
-    "/usr/local/bin/soffice",
+    "/usr/lib/libreoffice/program/soffice.bin",
+    "/opt/libreoffice/program/soffice.bin",
+    "/snap/bin/soffice",
+    "/var/lib/flatpak/exports/bin/org.libreoffice.LibreOffice",
 ]
 
 _soffice_cache = None
+_soffice_checked = False
 
 
 def find_soffice():
     """Return the soffice binary path or None if LibreOffice is unavailable."""
-    global _soffice_cache
-    if _soffice_cache is not None:
+    global _soffice_cache, _soffice_checked
+    if _soffice_checked:
         return _soffice_cache
 
     env = os.environ.get("SOFFICE_BIN")
     if env and shutil.which(env):
         _soffice_cache = env
+        _soffice_checked = True
         return _soffice_cache
 
     for c in _CANDIDATES:
         if os.path.sep in c:
             if os.path.exists(c):
                 _soffice_cache = c
+                _soffice_checked = True
                 return _soffice_cache
         else:
             p = shutil.which(c)
             if p:
                 _soffice_cache = p
+                _soffice_checked = True
                 return _soffice_cache
-    _soffice_cache = False
+    _soffice_cache = None
+    _soffice_checked = True
     return None
 
 

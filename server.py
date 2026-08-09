@@ -236,6 +236,29 @@ def api_download(job_id, name):
     return send_file(path, as_attachment=True, download_name=safe)
 
 
+@app.route("/api/diagnostics")
+def api_diagnostics():
+    """Report which rendering engines are detected on this server."""
+    from engine import convert as _convert
+    from engine import word_com as _word
+
+    soffice = _convert.find_soffice()
+    return jsonify(
+        {
+            "platform": os.name,
+            "word_com_available": bool(_word.word_available()),
+            "soffice_path": soffice,
+            "soffice_available": bool(_convert.soffice_available()),
+            "python": __import__("sys").version,
+            "hint": (
+                "OK: MS Word COM available"
+                if _word.word_available()
+                else "Word COM unavailable"
+            ),
+        }
+    )
+
+
 # --------------------------------------------------------------------------
 # export jobs
 # --------------------------------------------------------------------------

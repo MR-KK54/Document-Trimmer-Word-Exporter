@@ -57,7 +57,8 @@ class Renderer:
                         os.replace(produced, pdf)
                     else:
                         raise RuntimeError(
-                            "No document renderer available. MS Word (Windows) or LibreOffice is required for previews."
+                            "No document renderer available on this server. "
+                            "Install MS Word (Windows) or LibreOffice, then check /api/diagnostics."
                         )
                 finally:
                     import shutil
