@@ -10,12 +10,19 @@ Every function degrades gracefully when Word is unavailable.
 
 import os
 import re
+import threading
 import unicodedata
 
 _win32com = None
 _pythoncom = None
 _word_checked = False
 _word_ok = False
+
+# Word COM is not thread-safe. Every call that touches Word must be serialized
+# through this lock so overlapping previews / pagination / verification jobs do
+# not spin up colliding Word.Application instances (the cause of intermittent
+# HTTP 500s on previews).
+_WORD_LOCK = threading.Lock()
 
 
 def _load_word():
@@ -94,63 +101,64 @@ def paginate(docx_path):
 
     boundaries[page0] = last content-unit index on that page.
     """
-    word = _open_word()
-    doc = None
-    try:
-        doc = _open_doc(word, docx_path, readonly=True)
-        doc.Repaginate()
-        page_count = int(doc.ComputeStatistics(2))  # wdStatisticPages
-
-        # Gather (start_char_pos, words, end_page) for every top-level paragraph
-        # and every table row in document order, merged by character position.
-        entries = []
+    with _WORD_LOCK:
+        word = _open_word()
+        doc = None
         try:
-            for para in doc.Paragraphs:
-                if para.Range.Tables.Count > 0:
-                    continue  # paragraph lives inside a table cell
-                rng = para.Range
-                text = rng.Text or ""
-                if text.endswith("\r"):
-                    text = text[:-1]
-                page = int(rng.Information(3))  # wdActiveEndPageNumber
-                entries.append((int(rng.Start), _norm(text), page))
-        except Exception:
+            doc = _open_doc(word, docx_path, readonly=True)
+            doc.Repaginate()
+            page_count = int(doc.ComputeStatistics(2))  # wdStatisticPages
+
+            # Gather (start_char_pos, words, end_page) for every top-level paragraph
+            # and every table row in document order, merged by character position.
             entries = []
             try:
-                for i in range(1, doc.Paragraphs.Count + 1):
-                    para = doc.Paragraphs(i)
+                for para in doc.Paragraphs:
                     if para.Range.Tables.Count > 0:
-                        continue
+                        continue  # paragraph lives inside a table cell
                     rng = para.Range
-                    text = (rng.Text or "").rstrip("\r")
-                    page = int(rng.Information(3))
+                    text = rng.Text or ""
+                    if text.endswith("\r"):
+                        text = text[:-1]
+                    page = int(rng.Information(3))  # wdActiveEndPageNumber
                     entries.append((int(rng.Start), _norm(text), page))
+            except Exception:
+                entries = []
+                try:
+                    for i in range(1, doc.Paragraphs.Count + 1):
+                        para = doc.Paragraphs(i)
+                        if para.Range.Tables.Count > 0:
+                            continue
+                        rng = para.Range
+                        text = (rng.Text or "").rstrip("\r")
+                        page = int(rng.Information(3))
+                        entries.append((int(rng.Start), _norm(text), page))
+                except Exception:
+                    pass
+
+            try:
+                for t in range(1, doc.Tables.Count + 1):
+                    tbl = doc.Tables(t)
+                    for r in range(1, tbl.Rows.Count + 1):
+                        row = tbl.Rows(r)
+                        rng = row.Range
+                        text = (rng.Text or "").rstrip("\r\x07")
+                        page = int(rng.Information(3))
+                        entries.append((int(rng.Start), _norm(text), page))
             except Exception:
                 pass
 
-        try:
-            for t in range(1, doc.Tables.Count + 1):
-                tbl = doc.Tables(t)
-                for r in range(1, tbl.Rows.Count + 1):
-                    row = tbl.Rows(r)
-                    rng = row.Range
-                    text = (rng.Text or "").rstrip("\r\x07")
-                    page = int(rng.Information(3))
-                    entries.append((int(rng.Start), _norm(text), page))
-        except Exception:
-            pass
-
-        entries.sort(key=lambda e: e[0])
-        items = [(w, p) for _, w, p in entries]
-        page_count = max(page_count, max([p for _, p in items] + [1]))
-        return page_count, _unit_end_pages_to_boundaries(items, page_count)
-    finally:
-        try:
-            if doc is not None:
-                doc.Close(SaveChanges=0)
-        except Exception:
-            pass
-        _shutdown_word(word)
+            entries.sort(key=lambda e: e[0])
+            items = [(w, p) for _, w, p in entries]
+            page_count = max(page_count, max([p for _, p in items] + [1]))
+            return page_count, _unit_end_pages_to_boundaries(items, page_count)
+        finally:
+            try:
+                if doc is not None:
+                    doc.Close(SaveChanges=0)
+            except Exception:
+                pass
+            _shutdown_word(word)
 
 
 def _unit_end_pages_to_boundaries(items, page_count):
@@ -191,30 +199,31 @@ def convert(src_path, out_format, out_path):
     if os.path.exists(out_path):
         os.remove(out_path)
 
-    word = _open_word()
-    doc = None
-    try:
-        doc = _open_doc(word, src_path, readonly=False)
-        if fmt == "pdf":
-            doc.ExportAsFixedFormat(
-                OutputFileName=out_path,
-                ExportFormat=17,  # wdExportFormatPDF
-                OpenAfterExport=False,
-                OptimizeFor=0,
-                CreateBookmarks=1,
-                DocStructureTags=True,
-            )
-        elif fmt in _SAVE_FORMAT:
-            doc.SaveAs(out_path, FileFormat=_SAVE_FORMAT[fmt])
-        else:
-            raise ValueError(f"Unsupported format for MS Word conversion: {out_format}")
-    finally:
+    with _WORD_LOCK:
+        word = _open_word()
+        doc = None
         try:
-            if doc is not None:
-                doc.Close(SaveChanges=0)
-        except Exception:
-            pass
-        _shutdown_word(word)
+            doc = _open_doc(word, src_path, readonly=False)
+            if fmt == "pdf":
+                doc.ExportAsFixedFormat(
+                    OutputFileName=out_path,
+                    ExportFormat=17,  # wdExportFormatPDF
+                    OpenAfterExport=False,
+                    OptimizeFor=0,
+                    CreateBookmarks=1,
+                    DocStructureTags=True,
+                )
+            elif fmt in _SAVE_FORMAT:
+                doc.SaveAs(out_path, FileFormat=_SAVE_FORMAT[fmt])
+            else:
+                raise ValueError(f"Unsupported format for MS Word conversion: {out_format}")
+        finally:
+            try:
+                if doc is not None:
+                    doc.Close(SaveChanges=0)
+            except Exception:
+                pass
+            _shutdown_word(word)
     if not os.path.exists(out_path):
         raise RuntimeError("MS Word did not produce the converted file.")
     return out_path

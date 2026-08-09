@@ -3,22 +3,32 @@
 On Windows the docx is rendered through MS Word (Word COM) so previews match
 Word exactly. On Linux (Render) LibreOffice is used only as a renderer when
 available. PDFs are rendered directly with PyMuPDF.
+
+The generated PDF and the rendered page PNGs are cached so paging through a
+document is fast after the first render. All Word COM access is serialized by
+a lock so overlapping preview requests cannot collide.
 """
 
 import hashlib
 import io
 import os
 import tempfile
+import threading
 
 import pymupdf
 
 from . import convert, word_com
+
+MAX_PNG_CACHE = 200
 
 
 class Renderer:
     def __init__(self, cache_dir):
         self.cache_dir = cache_dir
         os.makedirs(cache_dir, exist_ok=True)
+        self._pdf_lock = threading.Lock()
+        self._png_cache = {}
+        self._png_lock = threading.Lock()
 
     def _cache_key(self, path):
         st = os.stat(path)
@@ -33,26 +43,29 @@ class Renderer:
         key = self._cache_key(path)
         pdf = os.path.join(self.cache_dir, key + ".pdf")
         if not os.path.exists(pdf):
-            tmp = tempfile.mkdtemp(prefix="render_")
-            try:
-                if word_com.word_available():
-                    word_com.export_pdf(path, pdf)
-                elif convert.soffice_available():
-                    produced = convert.convert_to_pdf(path, tmp)
-                    os.replace(produced, pdf)
-                else:
-                    raise RuntimeError(
-                        "No document renderer available. MS Word (Windows) or LibreOffice is required for previews."
-                    )
-            finally:
-                import shutil
+            # Serialize conversion so two threads never export the same doc to
+            # the same target (Word COM is not safe to run in parallel).
+            with self._pdf_lock:
+                if os.path.exists(pdf):
+                    return pdf, False
+                tmp = tempfile.mkdtemp(prefix="render_")
+                try:
+                    if word_com.word_available():
+                        word_com.export_pdf(path, pdf)
+                    elif convert.soffice_available():
+                        produced = convert.convert_to_pdf(path, tmp)
+                        os.replace(produced, pdf)
+                    else:
+                        raise RuntimeError(
+                            "No document renderer available. MS Word (Windows) or LibreOffice is required for previews."
+                        )
+                finally:
+                    import shutil
 
-                shutil.rmtree(tmp, ignore_errors=True)
+                    shutil.rmtree(tmp, ignore_errors=True)
         return pdf, False
 
-    def render_page(self, path, page, width):
-        """Return (png_bytes, total_pages). page is 1-indexed."""
-        pdf, _ = self._pdf_for(path)
+    def _render_png(self, pdf, page, width):
         with pymupdf.open(pdf) as doc:
             total = doc.page_count
             page = max(1, min(page, total))
@@ -61,3 +74,18 @@ class Renderer:
             pix = pg.get_pixmap(matrix=pymupdf.Matrix(zoom, zoom))
             buf = io.BytesIO(pix.tobytes("png"))
         return buf.getvalue(), total
+
+    def render_page(self, path, page, width):
+        """Return (png_bytes, total_pages). page is 1-indexed."""
+        pdf, _ = self._pdf_for(path)
+        cache_key = f"{os.path.basename(pdf)}-p{page}-w{width}"
+        with self._png_lock:
+            hit = self._png_cache.get(cache_key)
+        if hit is not None:
+            return hit
+        png, total = self._render_png(pdf, page, width)
+        with self._png_lock:
+            if len(self._png_cache) >= MAX_PNG_CACHE:
+                self._png_cache.clear()
+            self._png_cache[cache_key] = (png, total)
+        return png, total

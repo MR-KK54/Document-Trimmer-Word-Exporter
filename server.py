@@ -195,7 +195,17 @@ def _render_preview_response(path, page_param, width_param):
         width = int(width_param or 1200)
     except ValueError:
         page, width = 1, 1200
-    png, total = renderer.render_page(path, page, width)
+    try:
+        png, total = renderer.render_page(path, page, width)
+    except Exception as e:
+        # Transient failures (Word busy, first-open dialog) are retried once.
+        import time
+
+        time.sleep(1.0)
+        try:
+            png, total = renderer.render_page(path, page, width)
+        except Exception as e2:
+            return jsonify({"error": f"Preview render failed: {e2}"}), 500
     return Response(png, mimetype="image/png", headers={"X-Total-Pages": str(total), "Cache-Control": "no-store"})
 
 

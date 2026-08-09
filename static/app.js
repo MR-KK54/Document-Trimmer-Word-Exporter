@@ -211,7 +211,14 @@ async function fetchPreviewImage(url, width, allowPoll = true, attempts = 180) {
       await new Promise((r) => setTimeout(r, 1000));
       return fetchPreviewImage(url, width, allowPoll, attempts - 1);
     }
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    if (!resp.ok) {
+      let detail = "HTTP " + resp.status;
+      try {
+        const data = await resp.json();
+        if (data && data.error) detail = data.error;
+      } catch (_) {}
+      throw new Error(detail);
+    }
     const total = parseInt(resp.headers.get("X-Total-Pages") || "0", 10);
     const blob = await resp.blob();
     const urlObj = URL.createObjectURL(blob);
