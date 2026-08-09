@@ -92,13 +92,23 @@ def _has_explicit_break(unit):
             if pPr.find(_q("sectPr")) is not None:
                 return True  # section break starts a new page
         # an explicit page break run at the end of the paragraph forces the next
-        # unit onto a fresh page (nothing after it)
+        # unit onto a fresh page (nothing after it). Scan runs backwards and
+        # inspect run children so a trailing page break inside the last run is
+        # found even when the same run also carries text before it.
         for r in reversed(node.findall(_q("r"))):
-            if _has_text(r) or r.find(_q("drawing")) is not None:
-                break
-            for br in r.findall(_q("br")):
-                if br.get(_q("type")) == "page":
-                    return True
+            for child in reversed(list(r)):
+                if child.tag == _q("rPr"):
+                    continue
+                if child.tag == _q("t"):
+                    if (child.text or "").strip():
+                        return False  # trailing text -> no trailing break
+                    continue
+                if child.tag == _q("br"):
+                    if child.get(_q("type")) == "page":
+                        return True
+                    continue  # line break, keep scanning backwards
+                # drawing / pict / object / other content -> no trailing break
+                return False
     return False
 
 
@@ -157,14 +167,28 @@ def _paragraph_has_only_breaks(paragraph):
 
 
 def _strip_trailing_break_runs(paragraph):
-    """Remove trailing page-break/line-break runs from the end of a paragraph."""
+    """Remove trailing page-break/line-break runs from the end of a paragraph.
+
+    Also removes a page/line break that sits at the very end of the last run,
+    even when that run also contains text before the break.
+    """
     runs = paragraph.findall(_q("r"))
     while runs:
         r = runs[-1]
-        has_br = False
-        for br in r.findall(_q("br")):
-            if br.get(_q("type")) in (None, "textWrapping", "page"):
-                has_br = True
+        # strip a trailing break that is the last child of this run
+        children = list(r)
+        if children and children[-1].tag == _q("br"):
+            last = children[-1]
+            if last.get(_q("type")) in (None, "textWrapping", "page"):
+                r.remove(last)
+                if not list(r):
+                    paragraph.remove(r)
+                    runs = paragraph.findall(_q("r"))
+                continue
+        has_br = any(
+            br.get(_q("type")) in (None, "textWrapping", "page")
+            for br in r.findall(_q("br"))
+        )
         has_text = _has_text(r)
         has_drawing = r.find(_q("drawing")) is not None or r.find(_q("pict")) is not None
         if has_text or has_drawing or not has_br:
