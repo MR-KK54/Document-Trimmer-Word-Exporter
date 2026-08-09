@@ -81,6 +81,47 @@ def _make_page_break_paragraph():
     return p
 
 
+def _has_explicit_break(unit):
+    """True if the paragraph/row already forces a page break before it or at its end."""
+    if unit["kind"] == "p":
+        node = unit["node"]
+        pPr = node.find(_q("pPr"))
+        if pPr is not None:
+            if pPr.find(_q("pageBreakBefore")) is not None:
+                return True
+            if pPr.find(_q("sectPr")) is not None:
+                return True  # section break starts a new page
+        # an explicit page break run at the end of the paragraph forces the next
+        # unit onto a fresh page (nothing after it)
+        for r in reversed(node.findall(_q("r"))):
+            if _has_text(r) or r.find(_q("drawing")) is not None:
+                break
+            for br in r.findall(_q("br")):
+                if br.get(_q("type")) == "page":
+                    return True
+    return False
+
+
+def _needs_forced_break(units, fu):
+    """Decide whether a page break must be inserted before unit index fu.
+
+    If the source already begins a new page there naturally (explicit page
+    break paragraph, pageBreakBefore, section break), inserting another break
+    would produce a blank page, so we return False.
+    """
+    if fu <= 0 or fu >= len(units):
+        return False
+    # Break already expressed on the unit itself.
+    if _has_explicit_break(units[fu]):
+        return False
+    # Previous unit is an explicit page-break paragraph -> next unit is a new page.
+    prev = units[fu - 1]
+    if prev["kind"] == "p":
+        if _has_explicit_break(prev):
+            return False
+    return True
+
+
 def _add_page_break_before(paragraph):
     pPr = paragraph.find(_q("pPr"))
     if pPr is None:
@@ -311,10 +352,11 @@ def split_docx_range(src_docx, start_page, end_page, boundaries, out_path):
     if ue < us:
         raise ValueError(f"No content on pages {start_page}-{end_page}.")
 
+    units = build_units(load_document_xml(src_docx).find(_q("body")))
     break_unit_indices = set()
     for p in range(start_page + 1, end_page + 1):
         fu = (boundaries[p - 2] + 1) if p > 1 else 0
-        if fu > us and fu <= ue:
+        if fu > us and fu <= ue and _needs_forced_break(units, fu):
             break_unit_indices.add(fu)
 
     _rewrite_document_xml(src_docx, out_path, us, ue, break_unit_indices, start_page, end_page)
