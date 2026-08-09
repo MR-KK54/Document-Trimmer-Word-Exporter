@@ -3,7 +3,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import word_com
 from engine.docx_trim import load_document_xml, build_units, _q, _element_words
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime", "tests")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "tests")
 BASE = "http://127.0.0.1:5000"
 
 def call(method, path, data=None):

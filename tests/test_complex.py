@@ -5,7 +5,7 @@ from docx.enum.section import WD_SECTION
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
 from docx.shared import Pt
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime", "tests")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "tests")
 doc = Document()
 
 # Section 1: pages 1-4, header SECTION A

@@ -2,7 +2,7 @@ import os, sys, time, json, urllib.request, urllib.parse
 from pathlib import Path
 
 BASE = "http://127.0.0.1:5000"
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime", "tests")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "tests")
 
 def call(method, path, data=None, files=None):
     if files:

@@ -2,7 +2,7 @@ import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from engine import word_com
 
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime", "tests")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "tests")
 
 word = word_com._open_word()
 try:

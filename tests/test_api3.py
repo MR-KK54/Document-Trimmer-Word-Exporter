@@ -1,8 +1,8 @@
 import os, sys, json, time, uuid, urllib.request, urllib.parse
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 BASE = "http://127.0.0.1:5000"
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "runtime", "tests")
+OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "runtime", "tests")
 
 
 def call(method, path, data=None):
