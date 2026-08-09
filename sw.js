@@ -1,4 +1,4 @@
-const CACHE_NAME = "word-exporter-v1.2.0";
+const CACHE_NAME = "word-exporter-v1.3.0";
 const ASSETS_TO_CACHE = [
   "./",
   "index.html",
@@ -31,7 +31,8 @@ self.addEventListener("activate", (event) => {
 
 // Fetch Intercept (Network First for API, Cache First for Static Assets)
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET" || event.request.url.includes("/api/")) {
+  const url = new URL(event.request.url);
+  if (event.request.method !== "GET" || url.pathname.startsWith("/api/")) {
     return;
   }
   event.respondWith(

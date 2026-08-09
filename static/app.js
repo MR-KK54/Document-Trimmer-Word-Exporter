@@ -447,6 +447,7 @@ function renderResults(job) {
     link.href = "/api/download/" + job.job_id + "/" + encodeURIComponent(name);
     link.download = name;
     link.textContent = "Save: " + name;
+    link.onclick = (e) => { e.preventDefault(); downloadViaBlob(job.job_id, name); };
     const prevBtn = document.createElement("button");
     prevBtn.type = "button";
     prevBtn.className = "btn prev-out";
@@ -457,16 +458,28 @@ function renderResults(job) {
   });
 }
 
+async function downloadViaBlob(jobId, name) {
+  try {
+    const resp = await fetch("/api/download/" + jobId + "/" + encodeURIComponent(name));
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const blob = await resp.blob();
+    const urlObj = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = urlObj;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(urlObj), 10000);
+  } catch (e) {
+    appendLog("error", "Download failed: " + e.message);
+    alert("Download failed: " + e.message);
+  }
+}
+
 function saveAllFiles(job, single) {
   job.outputs.forEach((name, i) => {
-    setTimeout(() => {
-      const a = document.createElement("a");
-      a.href = "/api/download/" + job.job_id + "/" + encodeURIComponent(name);
-      a.download = name;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }, i * 250);
+    setTimeout(() => downloadViaBlob(job.job_id, name), i * 250);
   });
 }
 
