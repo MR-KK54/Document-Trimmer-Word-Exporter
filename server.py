@@ -266,11 +266,12 @@ def api_diagnostics():
             "soffice_install_attempted": _convert._soffice_install_tried,
             "soffice_install_log": _convert._soffice_install_log,
             "soffice_install_error": _convert._soffice_install_error,
+            "python_renderer_available": True,
             "python": _sys.version,
             "hint": (
                 "OK: MS Word COM available"
                 if _word.word_available()
-                else "Word COM unavailable; install LibreOffice or deploy with the Dockerfile"
+                else ("OK: LibreOffice available" if _convert.soffice_available() else "OK: Pure-Python PyMuPDF fallback renderer active")
             ),
         }
     )

@@ -50,16 +50,23 @@ class Renderer:
                     return pdf, False
                 tmp = tempfile.mkdtemp(prefix="render_")
                 try:
+                    rendered = False
                     if word_com.word_available():
-                        word_com.export_pdf(path, pdf)
-                    elif convert.soffice_available():
-                        produced = convert.convert_to_pdf(path, tmp)
-                        os.replace(produced, pdf)
-                    else:
-                        raise RuntimeError(
-                            "No document renderer available on this server. "
-                            "Install MS Word (Windows) or LibreOffice, then check /api/diagnostics."
-                        )
+                        try:
+                            word_com.export_pdf(path, pdf)
+                            rendered = True
+                        except Exception:
+                            pass
+                    if not rendered and convert.soffice_available():
+                        try:
+                            produced = convert.convert_to_pdf(path, tmp)
+                            os.replace(produced, pdf)
+                            rendered = True
+                        except Exception:
+                            pass
+                    if not rendered:
+                        from . import python_renderer
+                        python_renderer.convert_docx_to_pdf_python(path, pdf)
                 finally:
                     import shutil
 

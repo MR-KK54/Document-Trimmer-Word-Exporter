@@ -193,22 +193,38 @@ def _run_soffice(args, timeout=600):
 
 
 def convert_to_pdf(src, out_dir):
-    """Convert any LibreOffice-capable file to PDF (Linux fallback renderer)."""
+    """Convert any file to PDF (MS Word -> LibreOffice -> Pure-Python fallback)."""
     out_dir = os.path.abspath(out_dir)
     os.makedirs(out_dir, exist_ok=True)
-    _run_soffice(["--convert-to", "pdf", "--outdir", out_dir, os.path.abspath(src)])
+    if word_com.word_available():
+        try:
+            base = os.path.splitext(os.path.basename(src))[0]
+            pdf = os.path.join(out_dir, base + ".pdf")
+            word_com.export_pdf(src, pdf)
+            return pdf
+        except Exception:
+            pass
+    if soffice_available():
+        try:
+            _run_soffice(["--convert-to", "pdf", "--outdir", out_dir, os.path.abspath(src)])
+            base = os.path.splitext(os.path.basename(src))[0]
+            pdf = os.path.join(out_dir, base + ".pdf")
+            if os.path.exists(pdf):
+                return pdf
+        except Exception:
+            pass
     base = os.path.splitext(os.path.basename(src))[0]
     pdf = os.path.join(out_dir, base + ".pdf")
-    if not os.path.exists(pdf):
-        raise RuntimeError("LibreOffice did not produce a PDF for " + src)
+    from . import python_renderer
+    python_renderer.convert_docx_to_pdf_python(src, pdf)
     return pdf
 
 
 def convert_docx_to(src_docx, out_format, out_path):
     """Convert a split docx to the target format.
 
-    Uses MS Word COM when available; otherwise LibreOffice; otherwise only
-    docx/docm (which are the Word package itself) can be produced.
+    Uses MS Word COM when available; otherwise LibreOffice; otherwise Python fallback for PDF
+    or standard Word package copy for docx/docm.
     """
     fmt = out_format.lower().strip().lstrip(".")
     if fmt in ("docx", "docm"):
@@ -220,18 +236,29 @@ def convert_docx_to(src_docx, out_format, out_path):
         return out_path
 
     if word_com.word_available():
-        return word_com.convert(src_docx, fmt, out_path)
+        try:
+            return word_com.convert(src_docx, fmt, out_path)
+        except Exception:
+            if fmt != "pdf":
+                raise
 
     if soffice_available():
-        out_dir = os.path.dirname(os.path.abspath(out_path))
-        os.makedirs(out_dir, exist_ok=True)
-        _run_soffice(["--convert-to", fmt, "--outdir", out_dir, os.path.abspath(src_docx)])
-        base = os.path.splitext(os.path.basename(src_docx))[0]
-        produced = os.path.join(out_dir, base + "." + fmt)
-        if os.path.exists(produced):
-            os.replace(produced, out_path)
-            return out_path
-        raise RuntimeError(f"LibreOffice did not produce .{fmt} output.")
+        try:
+            out_dir = os.path.dirname(os.path.abspath(out_path))
+            os.makedirs(out_dir, exist_ok=True)
+            _run_soffice(["--convert-to", fmt, "--outdir", out_dir, os.path.abspath(src_docx)])
+            base = os.path.splitext(os.path.basename(src_docx))[0]
+            produced = os.path.join(out_dir, base + "." + fmt)
+            if os.path.exists(produced):
+                os.replace(produced, out_path)
+                return out_path
+        except Exception:
+            if fmt != "pdf":
+                raise
+
+    if fmt == "pdf":
+        from . import python_renderer
+        return python_renderer.convert_docx_to_pdf_python(src_docx, out_path)
 
     raise RuntimeError(
         f"Format '{fmt}' requires MS Word (Windows) or LibreOffice on the server."

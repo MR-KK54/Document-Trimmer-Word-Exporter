@@ -24,12 +24,21 @@ def _pdf_for(path, out_dir):
     if ext == ".pdf":
         return path
     if word_com.word_available():
-        pdf = os.path.join(out_dir, "doc.pdf")
-        word_com.export_pdf(path, pdf)
-        return pdf
+        try:
+            pdf = os.path.join(out_dir, "doc.pdf")
+            word_com.export_pdf(path, pdf)
+            return pdf
+        except Exception:
+            pass
     if convert.soffice_available():
-        return convert.convert_to_pdf(path, out_dir)
-    raise RuntimeError("No document renderer available (MS Word or LibreOffice required for verification).")
+        try:
+            return convert.convert_to_pdf(path, out_dir)
+        except Exception:
+            pass
+    from . import python_renderer
+    pdf = os.path.join(out_dir, "doc.pdf")
+    python_renderer.convert_docx_to_pdf_python(path, pdf)
+    return pdf
 
 
 def render_pages(path, out_dir, pages, width=1100):
