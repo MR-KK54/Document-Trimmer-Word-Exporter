@@ -239,21 +239,38 @@ def api_download(job_id, name):
 @app.route("/api/diagnostics")
 def api_diagnostics():
     """Report which rendering engines are detected on this server."""
+    import getpass
+    import shutil as _shutil
+    import sys as _sys
+
     from engine import convert as _convert
     from engine import word_com as _word
 
     soffice = _convert.find_soffice()
+    try:
+        import os as _os
+
+        euid = _os.geteuid()
+    except Exception:
+        euid = None
     return jsonify(
         {
             "platform": os.name,
+            "runtime_user": getpass.getuser(),
+            "euid": euid,
+            "has_apt_get": bool(_shutil.which("apt-get") or os.path.exists("/usr/bin/apt-get")),
+            "has_sudo": bool(_shutil.which("sudo")),
             "word_com_available": bool(_word.word_available()),
             "soffice_path": soffice,
             "soffice_available": bool(_convert.soffice_available()),
-            "python": __import__("sys").version,
+            "soffice_install_attempted": _convert._soffice_install_tried,
+            "soffice_install_log": _convert._soffice_install_log,
+            "soffice_install_error": _convert._soffice_install_error,
+            "python": _sys.version,
             "hint": (
                 "OK: MS Word COM available"
                 if _word.word_available()
-                else "Word COM unavailable"
+                else "Word COM unavailable; install LibreOffice or deploy with the Dockerfile"
             ),
         }
     )

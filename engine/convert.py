@@ -35,6 +35,8 @@ _CANDIDATES = [
 _soffice_cache = None
 _soffice_checked = False
 _soffice_install_tried = False
+_soffice_install_log = []
+_soffice_install_error = None
 
 
 def _detect_soffice():
@@ -74,40 +76,71 @@ def _detect_soffice():
 def _try_install_soffice():
     """Best-effort runtime install of LibreOffice when missing (Linux/Render).
 
-    Covers deployments that did not run the Dockerfile (e.g. Render buildpack
-    services) where apt/root access is available. Runs at most once per process
-    and is guarded so overlapping requests do not fight each other.
+    Covers deployments that did not run the Dockerfile (e.g. Render native
+    runtimes). Tries apt-get directly first, then via sudo -n when the process
+    is not root, and records what happened for /api/diagnostics. Runs at most
+    once per process and is guarded so overlapping requests do not fight.
     """
-    global _soffice_install_tried
+    global _soffice_install_tried, _soffice_install_log, _soffice_install_error
     if _soffice_install_tried or os.name == "nt":
         return
     _soffice_install_tried = True
+    if not (shutil.which("apt-get") or os.path.exists("/usr/bin/apt-get")):
+        _soffice_install_error = "apt-get not found - cannot install LibreOffice at runtime"
+        _soffice_install_log.append(_soffice_install_error)
+        print(_soffice_install_error)
+        return
+
+    def _log(line):
+        _soffice_install_log.append(line)
+        if len(_soffice_install_log) > 50:
+            del _soffice_install_log[:-50]
+        print(line)
+
+    apt_cmd = shutil.which("apt-get") or "/usr/bin/apt-get"
     try:
         import getpass
 
-        if getpass.getuser() != "root":
-            return
-    except Exception:
-        return
-    if not os.path.exists("/usr/bin/apt-get"):
-        return
-    try:
-        print("LibreOffice not found - attempting runtime install (this may take a while)...")
-        subprocess.run(
-            ["apt-get", "update", "-qq"],
-            capture_output=True, text=True, timeout=300,
-        )
-        subprocess.run(
-            [
-                "apt-get", "install", "-y", "--no-install-recommends",
+        is_root = False
+        try:
+            import os as _os
+            is_root = _os.geteuid() == 0
+        except Exception:
+            is_root = getpass.getuser() == "root"
+        base = [apt_cmd]
+        if not is_root:
+            sudo = shutil.which("sudo")
+            if not sudo:
+                _soffice_install_error = (
+                    "not running as root and sudo unavailable - cannot apt-get install LibreOffice"
+                )
+                _log(_soffice_install_error)
+                return
+            base = [sudo, "-n", apt_cmd]
+            _log("Non-root process; attempting install via sudo -n")
+
+        _log("LibreOffice not found - attempting runtime install (may take minutes)...")
+        upd = subprocess.run(base + ["update", "-qq"], capture_output=True, text=True, timeout=300)
+        _log("apt-get update rc=" + str(upd.returncode))
+        inst = subprocess.run(
+            base
+            + [
+                "install", "-y", "--no-install-recommends",
                 "libreoffice-writer", "libreoffice-core", "libreoffice-common",
                 "libreoffice-style-colibre", "fonts-dejavu", "fonts-liberation",
             ],
             capture_output=True, text=True, timeout=900,
         )
-        print("LibreOffice runtime install finished.")
+        _log("apt-get install rc=" + str(inst.returncode))
+        if inst.returncode != 0:
+            tail = (inst.stderr or inst.stdout or "").strip().splitlines()[-4:]
+            _soffice_install_error = "apt-get install failed: " + " | ".join(tail)
+            _log(_soffice_install_error)
+            return
+        _log("LibreOffice runtime install finished.")
     except Exception as e:
-        print("LibreOffice runtime install failed:", e)
+        _soffice_install_error = "LibreOffice runtime install failed: " + str(e)
+        _log(_soffice_install_error)
 
 
 def find_soffice():
