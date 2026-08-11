@@ -168,26 +168,43 @@ def paginate(docx_path):
                     p = entries[entry_idx][2] if entry_idx < len(entries) else (unit_page[-1] if unit_page else 1)
                     unit_page.append(p)
                     continue
-                u_text = _norm(_element_text(node))
-                if not u_text:
+                u_text_list = _norm(_element_text(node))
+                u_text_str = "".join(u_text_list)
+                if not u_text_str:
                     p = entries[entry_idx][2] if entry_idx < len(entries) else (unit_page[-1] if unit_page else 1)
+                    if entry_idx < len(entries):
+                        entry_idx += 1
                     unit_page.append(p)
                     continue
 
-                matched_page = None
-                for ei in range(entry_idx, min(entry_idx + 5, len(entries))):
-                    e_text, e_page = entries[ei][1], entries[ei][2]
-                    if u_text == e_text or (u_text and e_text and (u_text[:5] == e_text[:5] or "".join(u_text[:3]) in "".join(e_text))):
-                        matched_page = e_page
-                        entry_idx = ei + 1
+                last_matched_page = None
+                consumed_any = False
+                while entry_idx < len(entries):
+                    e_text_list, e_page = entries[entry_idx][1], entries[entry_idx][2]
+                    e_text_str = "".join(e_text_list)
+                    if not e_text_str:
+                        last_matched_page = e_page
+                        entry_idx += 1
+                        consumed_any = True
+                        continue
+                    if (e_text_str in u_text_str) or (u_text_list and e_text_list and u_text_list[:4] == e_text_list[:4]):
+                        last_matched_page = e_page
+                        entry_idx += 1
+                        consumed_any = True
+                    else:
+                        if consumed_any:
+                            break
+                        last_matched_page = e_page
+                        entry_idx += 1
                         break
-                if matched_page is None:
+
+                if last_matched_page is None:
                     if entry_idx < len(entries):
-                        matched_page = entries[entry_idx][2]
+                        last_matched_page = entries[entry_idx][2]
                         entry_idx += 1
                     else:
-                        matched_page = unit_page[-1] if unit_page else 1
-                unit_page.append(matched_page)
+                        last_matched_page = unit_page[-1] if unit_page else 1
+                unit_page.append(last_matched_page)
 
             page_count = max([page_count] + unit_page + [1])
             by_page = {}
