@@ -49,22 +49,35 @@ def _element_words(elem):
     return _strip_punct(_element_text(elem))
 
 
+def _iter_body_content_nodes(parent, body_index):
+    """Yield dicts for content units inside parent element."""
+    for child in parent:
+        tag = child.tag
+        if tag == _q("p"):
+            yield {"kind": "p", "body_index": body_index, "node": child}
+        elif tag == _q("tbl"):
+            rows = child.findall(_q("tr"))
+            if not rows:
+                yield {"kind": "tbl", "body_index": body_index, "table": child, "rows": []}
+            else:
+                for row in rows:
+                    yield {"kind": "row", "body_index": body_index, "table": child, "row": row}
+        elif tag in (_q("sdt"), _q("customXml"), _q("ins"), _q("del"), _q("smartTag")):
+            sdtContent = child.find(_q("sdtContent"))
+            container = sdtContent if sdtContent is not None else child
+            yield from _iter_body_content_nodes(container, body_index)
+
+
 def build_units(body):
     """Build a flat list of content units (paragraphs and table rows).
 
     Each unit is a dict: {'kind': 'p'|'row', 'body_index', 'node'|('table','row')}
     """
+    if body is None:
+        return []
     units = []
     for idx, child in enumerate(body):
-        if child.tag == _q("p"):
-            units.append({"kind": "p", "body_index": idx, "node": child})
-        elif child.tag == _q("tbl"):
-            rows = child.findall(_q("tr"))
-            if not rows:
-                units.append({"kind": "tbl", "body_index": idx, "table": child, "rows": []})
-            else:
-                for row in rows:
-                    units.append({"kind": "row", "body_index": idx, "table": child, "row": row})
+        units.extend(list(_iter_body_content_nodes([child], idx)))
     return units
 
 
@@ -307,6 +320,10 @@ def _build_new_body(original_body, us, ue, break_unit_indices):
                     if ui in keep_set:
                         seg_tbl.append(row_nodes[j])
                 new_children.append(seg_tbl)
+        else:
+            kept = [ui for ui in uis if us <= ui <= ue]
+            if kept:
+                new_children.append(etree.fromstring(etree.tostring(child)))
 
     # Trailing break removal on the last page ---------------------------------
     replacement_final_sectpr = None

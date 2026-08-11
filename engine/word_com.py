@@ -109,24 +109,23 @@ def paginate(docx_path):
             doc.Repaginate()
             page_count = int(doc.ComputeStatistics(2))  # wdStatisticPages
 
-            # Gather (start_char_pos, words, end_page) for every top-level paragraph
-            # and every table row in document order, merged by character position.
+            # Inspect main text story only (wdMainTextStory = 1)
+            main_story = doc.StoryRanges(1)
+
             entries = []
             try:
-                for para in doc.Paragraphs:
+                for para in main_story.Paragraphs:
                     if para.Range.Tables.Count > 0:
                         continue  # paragraph lives inside a table cell
                     rng = para.Range
-                    text = rng.Text or ""
-                    if text.endswith("\r"):
-                        text = text[:-1]
+                    text = (rng.Text or "").rstrip("\r")
                     page = int(rng.Information(3))  # wdActiveEndPageNumber
                     entries.append((int(rng.Start), _norm(text), page))
             except Exception:
                 entries = []
                 try:
-                    for i in range(1, doc.Paragraphs.Count + 1):
-                        para = doc.Paragraphs(i)
+                    for i in range(1, main_story.Paragraphs.Count + 1):
+                        para = main_story.Paragraphs(i)
                         if para.Range.Tables.Count > 0:
                             continue
                         rng = para.Range
@@ -137,8 +136,8 @@ def paginate(docx_path):
                     pass
 
             try:
-                for t in range(1, doc.Tables.Count + 1):
-                    tbl = doc.Tables(t)
+                for t in range(1, main_story.Tables.Count + 1):
+                    tbl = main_story.Tables(t)
                     for r in range(1, tbl.Rows.Count + 1):
                         row = tbl.Rows(r)
                         rng = row.Range
@@ -149,9 +148,59 @@ def paginate(docx_path):
                 pass
 
             entries.sort(key=lambda e: e[0])
-            items = [(w, p) for _, w, p in entries]
-            page_count = max(page_count, max([p for _, p in items] + [1]))
-            return page_count, _unit_end_pages_to_boundaries(items, page_count)
+
+            # Fingerprint match XML units to Word COM entries
+            from .docx_trim import build_units, load_document_xml, _strip_punct, _element_text, _q
+            root = load_document_xml(docx_path)
+            body = root.find(_q("body"))
+            units = build_units(body) if body is not None else []
+
+            if not units or not entries:
+                items = [(w, p) for _, w, p in entries]
+                page_count = max(page_count, max([p for _, p in items] + [1]))
+                return page_count, _unit_end_pages_to_boundaries(items, page_count)
+
+            unit_page = []
+            entry_idx = 0
+            for u in units:
+                node = u["node"] if u["kind"] == "p" else (u["row"] if u["kind"] == "row" else u.get("table"))
+                if node is None:
+                    p = entries[entry_idx][2] if entry_idx < len(entries) else (unit_page[-1] if unit_page else 1)
+                    unit_page.append(p)
+                    continue
+                u_text = _norm(_element_text(node))
+                if not u_text:
+                    p = entries[entry_idx][2] if entry_idx < len(entries) else (unit_page[-1] if unit_page else 1)
+                    unit_page.append(p)
+                    continue
+
+                matched_page = None
+                for ei in range(entry_idx, min(entry_idx + 5, len(entries))):
+                    e_text, e_page = entries[ei][1], entries[ei][2]
+                    if u_text == e_text or (u_text and e_text and (u_text[:5] == e_text[:5] or "".join(u_text[:3]) in "".join(e_text))):
+                        matched_page = e_page
+                        entry_idx = ei + 1
+                        break
+                if matched_page is None:
+                    if entry_idx < len(entries):
+                        matched_page = entries[entry_idx][2]
+                        entry_idx += 1
+                    else:
+                        matched_page = unit_page[-1] if unit_page else 1
+                unit_page.append(matched_page)
+
+            page_count = max([page_count] + unit_page + [1])
+            by_page = {}
+            for i, p in enumerate(unit_page):
+                by_page.setdefault(p, []).append(i)
+            boundaries = []
+            last = -1
+            for p in range(1, page_count + 1):
+                lst = by_page.get(p)
+                if lst:
+                    last = max(last, max(lst))
+                boundaries.append(last)
+            return page_count, boundaries
         finally:
             try:
                 if doc is not None:
