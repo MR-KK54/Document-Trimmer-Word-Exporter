@@ -19,22 +19,16 @@ _MISSING = object()
 
 
 def _pdf_for(path, out_dir):
-    """Convert a document to PDF in out_dir."""
+    """Convert a document to PDF in out_dir (Word COM on Windows, else LibreOffice / PyMuPDF)."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
         return path
     pdf = os.path.join(out_dir, "doc.pdf")
-    try:
-        from . import python_renderer
-        python_renderer.convert_docx_to_pdf_python(path, pdf)
-        if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
-            return pdf
-    except Exception:
-        pass
     if word_com.word_available():
         try:
             word_com.export_pdf(path, pdf)
-            return pdf
+            if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
+                return pdf
         except Exception:
             pass
     if convert.soffice_available():
@@ -42,6 +36,13 @@ def _pdf_for(path, out_dir):
             return convert.convert_to_pdf(path, out_dir)
         except Exception:
             pass
+    try:
+        from . import python_renderer
+        python_renderer.convert_docx_to_pdf_python(path, pdf)
+        if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
+            return pdf
+    except Exception:
+        pass
     return pdf
 
 
