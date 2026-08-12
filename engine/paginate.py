@@ -65,28 +65,27 @@ def _explicit_break_pagination(docx_path):
 
 def paginate_docx(docx_path):
     """Return (page_count, boundaries); boundaries[page0] = last unit index."""
-    # 1) MS Word COM (Windows, exact Word layout).
+    # 1) PDF-backed layout pagination (Fast, exact visual rendering matching PDF preview/export).
+    try:
+        res = lo_paginate.paginate_pdf_backed(docx_path)
+        if res is not None and res[1] and res[1][0] != -1:
+            return res
+    except Exception:
+        pass
+
+    # 2) MS Word COM (Windows, exact Word layout).
     if word_com.word_available():
         try:
-            return word_com.paginate(docx_path)
-        except Exception:
-            pass
-
-    # 2) LibreOffice as a real layout engine (Linux/Render). Preferred over the
-    #    marker engine because previews and verification also render through
-    #    LibreOffice there, so page boundaries match what the user actually sees.
-    if convert.soffice_available():
-        try:
-            res = lo_paginate.paginate_with_libreoffice(docx_path)
-            if res is not None:
+            res = word_com.paginate(docx_path)
+            if res is not None and res[1] and res[1][0] != -1:
                 return res
         except Exception:
             pass
 
-    # 3) Word's own recorded pagination markers (works on Linux/Render).
+    # 3) Word's own recorded pagination markers.
     try:
         res = word_markers.paginate(docx_path)
-        if res is not None:
+        if res is not None and res[1] and res[1][0] != -1:
             return res
     except Exception:
         pass

@@ -53,10 +53,12 @@ def _prefix_match_len(fp_words, page_words):
     return k
 
 
-def paginate_with_libreoffice(docx_path):
-    if not convert.soffice_available():
-        return None
+def paginate_pdf_backed(docx_path, renderer_inst=None):
+    """Paginate docx by rendering to PDF and mapping content units to PDF pages.
 
+    Works via MS Word COM, LibreOffice, or PyMuPDF python_renderer fallback.
+    Guarantees exact visual page boundaries matching rendered PDF output.
+    """
     try:
         root = load_document_xml(docx_path)
     except Exception:
@@ -68,55 +70,60 @@ def paginate_with_libreoffice(docx_path):
     if not units:
         return None
 
-    tmp = tempfile.mkdtemp(prefix="lo_pag_")
+    pdf_file = None
+    tmp_dir = None
     try:
-        pdf = convert.convert_to_pdf(docx_path, tmp)
-        with pymupdf.open(pdf) as doc:
-            page_words_list = [_page_words(doc[i].get_text()) for i in range(doc.page_count)]
-        if not page_words_list:
+        if renderer_inst is None:
+            from .renderer import Renderer
+            renderer_inst = Renderer(os.path.join(tempfile.gettempdir(), "doc_trim_lo_pag"))
+        pdf_file, _ = renderer_inst._pdf_for(docx_path)
+        with pymupdf.open(pdf_file) as doc:
+            page_texts = [" ".join(re.findall(r"[a-z0-9]+", page.get_text().lower())) for page in doc]
+        if not page_texts:
             return None
 
-        # Fingerprint: the opening words of each unit (as word tokens).
-        fingerprints = []
+        from .docx_trim import _element_words
+        unit_page = []
+        p_idx = 0
         for u in units:
             node = u["node"] if u["kind"] == "p" else u["row"]
-            fingerprints.append(_strip_punct(_element_text(node))[:8])
-
-        unit_page = []
-        page_idx = 0  # monotonic forward search
-        for fp in fingerprints:
-            if not fp:
-                unit_page.append(page_idx + 1)
+            text_words = _element_words(node)
+            if not text_words:
+                unit_page.append(p_idx + 1)
                 continue
-            best_k = 0
-            best_page = page_idx
-            for pi in range(page_idx, len(page_words_list)):
-                k = _prefix_match_len(fp, page_words_list[pi])
-                if k > best_k:
-                    best_k = k
-                    best_page = pi
-                    if k == len(fp):
-                        break
-            # Only trust a move when at least the first word matched; otherwise
-            # keep the previous page (e.g. table cell boundaries, odd glyphs).
-            if best_k >= 1:
-                page_idx = best_page
-            unit_page.append(page_idx + 1)
 
-        page_count = max(unit_page)
+            fp = " ".join(text_words[:5])
+            if not fp:
+                unit_page.append(p_idx + 1)
+                continue
+
+            if p_idx + 1 < len(page_texts) and fp not in page_texts[p_idx]:
+                for pi in range(p_idx + 1, len(page_texts)):
+                    if fp in page_texts[pi]:
+                        p_idx = pi
+                        break
+
+            unit_page.append(p_idx + 1)
+
+        page_count = max(len(page_texts), max(unit_page) if unit_page else 1)
         by_page = {}
         for i, p in enumerate(unit_page):
             by_page.setdefault(p, []).append(i)
+
         boundaries = []
         last = -1
         for p in range(1, page_count + 1):
-            lst = by_page.get(p)
-            if lst:
-                last = max(last, max(lst))
+            if p in by_page:
+                last = max(by_page[p])
             boundaries.append(last)
+
         return page_count, boundaries
+    except Exception:
+        return None
     finally:
-        try:
-            shutil.rmtree(tmp, ignore_errors=True)
-        except Exception:
-            pass
+        if tmp_dir:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def paginate_with_libreoffice(docx_path):
+    return paginate_pdf_backed(docx_path)
