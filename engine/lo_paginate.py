@@ -53,6 +53,33 @@ def _prefix_match_len(fp_words, page_words):
     return k
 
 
+# How many pages ahead of the current page we're willing to jump to on a
+# single fingerprint match. Keeps one bad/ambiguous fingerprint from flinging
+# the cursor to some unrelated later page (which would then contaminate every
+# unit that follows, since p_idx carries forward).
+_MAX_FORWARD_LOOKAHEAD = 4
+
+
+def _best_page_match(fp_words, page_word_lists, start_pi, end_pi):
+    """Return (best_page_index, best_score) for fp_words within [start_pi, end_pi].
+
+    Uses in-order token matching (via _prefix_match_len) rather than raw
+    substring search, so short/common fingerprints can't false-match across
+    word boundaries in the concatenated page text.
+    """
+    best_pi = start_pi
+    best_score = -1
+    full = len(fp_words)
+    for pi in range(start_pi, end_pi + 1):
+        score = _prefix_match_len(fp_words, page_word_lists[pi])
+        if score > best_score:
+            best_score = score
+            best_pi = pi
+            if score == full:
+                break
+    return best_pi, best_score
+
+
 def paginate_pdf_backed(docx_path, renderer_inst=None):
     """Paginate docx by rendering to PDF and mapping content units to PDF pages.
 
@@ -70,7 +97,6 @@ def paginate_pdf_backed(docx_path, renderer_inst=None):
     if not units:
         return None
 
-    pdf_file = None
     tmp_dir = None
     try:
         if renderer_inst is None:
@@ -78,34 +104,57 @@ def paginate_pdf_backed(docx_path, renderer_inst=None):
             renderer_inst = Renderer(os.path.join(tempfile.gettempdir(), "doc_trim_lo_pag"))
         pdf_file, _ = renderer_inst._pdf_for(docx_path)
         with pymupdf.open(pdf_file) as doc:
-            page_texts = [" ".join(re.findall(r"[a-z0-9]+", page.get_text().lower())) for page in doc]
-        if not page_texts:
+            # Tokenized word lists per page (NOT joined strings) so matching
+            # is done token-by-token, not via raw substring search.
+            page_word_lists = [
+                re.findall(r"[a-z0-9]+", page.get_text().lower()) for page in doc
+            ]
+        if not page_word_lists:
             return None
 
         from .docx_trim import _element_words
         unit_page = []
         p_idx = 0
+        last_page_idx = len(page_word_lists) - 1
+
         for u in units:
             node = u["node"] if u["kind"] == "p" else u["row"]
             text_words = _element_words(node)
             if not text_words:
+                # No text to fingerprint (e.g. an empty paragraph/spacer row).
+                # Stay on the current page rather than guessing.
                 unit_page.append(p_idx + 1)
                 continue
 
-            fp = " ".join(text_words[:5])
-            if not fp:
-                unit_page.append(p_idx + 1)
-                continue
+            fp_words = text_words[:5]
+            full = len(fp_words)
+            # Require most of the fingerprint to match in order before we
+            # trust it -- a single common short word (e.g. a table cell like
+            # "2024" or "N/A") is not enough evidence to move pages.
+            min_required = min(full, 3)
 
-            if p_idx + 1 < len(page_texts) and fp not in page_texts[p_idx]:
-                for pi in range(p_idx + 1, len(page_texts)):
-                    if fp in page_texts[pi]:
-                        p_idx = pi
-                        break
+            # First check whether the fingerprint still matches on the page
+            # we're already on -- the common case, and the one we should
+            # prefer whenever it's plausible.
+            current_score = _prefix_match_len(fp_words, page_word_lists[p_idx])
+
+            if current_score < full and p_idx < last_page_idx:
+                # Look forward a bounded number of pages and pick whichever
+                # page gives the *best* match, rather than jumping to the
+                # first page that merely contains a coincidental match.
+                search_end = min(p_idx + _MAX_FORWARD_LOOKAHEAD, last_page_idx)
+                fwd_pi, fwd_score = _best_page_match(
+                    fp_words, page_word_lists, p_idx + 1, search_end
+                )
+                if fwd_score > current_score and fwd_score >= min_required:
+                    p_idx = fwd_pi
+                    current_score = fwd_score
+                # else: keep p_idx where it is -- the "match" ahead wasn't
+                # convincingly better than staying put.
 
             unit_page.append(p_idx + 1)
 
-        page_count = max(len(page_texts), max(unit_page) if unit_page else 1)
+        page_count = max(len(page_word_lists), max(unit_page) if unit_page else 1)
         by_page = {}
         for i, p in enumerate(unit_page):
             by_page.setdefault(p, []).append(i)
