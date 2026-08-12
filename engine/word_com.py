@@ -162,49 +162,46 @@ def paginate(docx_path):
 
             unit_page = []
             entry_idx = 0
+            num_entries = len(entries)
             for u in units:
                 node = u["node"] if u["kind"] == "p" else (u["row"] if u["kind"] == "row" else u.get("table"))
                 if node is None:
-                    p = entries[entry_idx][2] if entry_idx < len(entries) else (unit_page[-1] if unit_page else 1)
+                    p = entries[entry_idx][2] if entry_idx < num_entries else (unit_page[-1] if unit_page else 1)
                     unit_page.append(p)
                     continue
-                u_text_list = _norm(_element_text(node))
-                u_text_str = "".join(u_text_list)
+                u_words = _norm(_element_text(node))
+                u_text_str = "".join(u_words)
                 if not u_text_str:
-                    p = entries[entry_idx][2] if entry_idx < len(entries) else (unit_page[-1] if unit_page else 1)
-                    if entry_idx < len(entries):
+                    p = entries[entry_idx][2] if entry_idx < num_entries else (unit_page[-1] if unit_page else 1)
+                    if entry_idx < num_entries and not "".join(entries[entry_idx][1]):
                         entry_idx += 1
                     unit_page.append(p)
                     continue
 
-                last_matched_page = None
-                consumed_any = False
-                while entry_idx < len(entries):
-                    e_text_list, e_page = entries[entry_idx][1], entries[entry_idx][2]
-                    e_text_str = "".join(e_text_list)
+                best_ei = None
+                for ei in range(entry_idx, min(entry_idx + 10, num_entries)):
+                    e_words = entries[ei][1]
+                    e_text_str = "".join(e_words)
                     if not e_text_str:
-                        last_matched_page = e_page
-                        entry_idx += 1
-                        consumed_any = True
                         continue
-                    if (e_text_str in u_text_str) or (u_text_list and e_text_list and u_text_list[:4] == e_text_list[:4]):
-                        last_matched_page = e_page
-                        entry_idx += 1
-                        consumed_any = True
-                    else:
-                        if consumed_any:
-                            break
-                        last_matched_page = e_page
-                        entry_idx += 1
+                    if (e_text_str in u_text_str) or (u_text_str in e_text_str) or (u_words[:3] and e_words[:3] and u_words[:3] == e_words[:3]):
+                        best_ei = ei
                         break
 
-                if last_matched_page is None:
-                    if entry_idx < len(entries):
-                        last_matched_page = entries[entry_idx][2]
-                        entry_idx += 1
-                    else:
-                        last_matched_page = unit_page[-1] if unit_page else 1
-                unit_page.append(last_matched_page)
+                if best_ei is not None:
+                    matched_page = entries[best_ei][2]
+                    entry_idx = best_ei + 1
+                    while entry_idx < num_entries:
+                        nxt_str = "".join(entries[entry_idx][1])
+                        if nxt_str and nxt_str in u_text_str:
+                            matched_page = entries[entry_idx][2]
+                            entry_idx += 1
+                        else:
+                            break
+                    unit_page.append(matched_page)
+                else:
+                    p = entries[entry_idx][2] if entry_idx < num_entries else (unit_page[-1] if unit_page else 1)
+                    unit_page.append(p)
 
             page_count = max([page_count] + unit_page + [1])
             by_page = {}
