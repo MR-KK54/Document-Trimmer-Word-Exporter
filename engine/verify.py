@@ -19,13 +19,20 @@ _MISSING = object()
 
 
 def _pdf_for(path, out_dir):
-    """Convert a document to PDF in out_dir (Word COM on Windows, else LibreOffice)."""
+    """Convert a document to PDF in out_dir."""
     ext = os.path.splitext(path)[1].lower()
     if ext == ".pdf":
         return path
+    pdf = os.path.join(out_dir, "doc.pdf")
+    try:
+        from . import python_renderer
+        python_renderer.convert_docx_to_pdf_python(path, pdf)
+        if os.path.exists(pdf) and os.path.getsize(pdf) > 0:
+            return pdf
+    except Exception:
+        pass
     if word_com.word_available():
         try:
-            pdf = os.path.join(out_dir, "doc.pdf")
             word_com.export_pdf(path, pdf)
             return pdf
         except Exception:
@@ -35,9 +42,6 @@ def _pdf_for(path, out_dir):
             return convert.convert_to_pdf(path, out_dir)
         except Exception:
             pass
-    from . import python_renderer
-    pdf = os.path.join(out_dir, "doc.pdf")
-    python_renderer.convert_docx_to_pdf_python(path, pdf)
     return pdf
 
 
@@ -260,7 +264,6 @@ def verify_export(src_path, out_path, start_page, end_page, work_dir=None):
         if actual == expected:
             break
         if actual > expected:
-            # Extra trailing page(s): strip trailing breaks and re-render.
             out_path = strip_trailing_breaks(out_path)
             corrected += 1
             try:
@@ -269,6 +272,34 @@ def verify_export(src_path, out_path, start_page, end_page, work_dir=None):
                 break
         else:
             break
+
+    # Boundary auto-adjustment if actual > expected
+    if actual > expected and src_path and os.path.exists(src_path):
+        try:
+            from . import docx_trim, paginate
+            _, bd = paginate.paginate_docx(src_path)
+            if bd and end_page - 1 < len(bd):
+                orig_ue = bd[end_page - 1]
+                us = (bd[start_page - 2] + 1) if start_page > 1 else 0
+                for delta in range(1, 40):
+                    test_ue = orig_ue - delta
+                    if test_ue <= us:
+                        break
+                    test_bd = list(bd)
+                    test_bd[end_page - 1] = test_ue
+                    try:
+                        docx_trim.split_docx_range(src_path, start_page, end_page, test_bd, out_path)
+                        strip_trailing_breaks(out_path)
+                        test_actual = _page_count(out_path, work_dir)
+                        if test_actual == expected:
+                            actual = expected
+                            corrected += 1
+                            break
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
     report["corrected"] = corrected
     report["page_count"]["actual"] = actual
 
