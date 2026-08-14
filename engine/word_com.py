@@ -81,14 +81,30 @@ def _shutdown_word(word):
 
 
 def _open_doc(word, path, readonly=True):
-    return word.Documents.Open(
-        FileName=os.path.abspath(path),
-        ReadOnly=readonly,
-        AddToRecentFiles=False,
-        Visible=False,
-        ConfirmConversions=False,
-        Revert=False,
-    )
+    try:
+        return word.Documents.Open(
+            FileName=os.path.abspath(path),
+            ReadOnly=readonly,
+            AddToRecentFiles=False,
+            Visible=False,
+            ConfirmConversions=False,
+            Revert=False,
+        )
+    except Exception:
+        try:
+            os.system("taskkill /f /im WINWORD.EXE 2>NUL")
+            time.sleep(0.5)
+        except Exception:
+            pass
+        fresh_word = _open_word()
+        return fresh_word.Documents.Open(
+            FileName=os.path.abspath(path),
+            ReadOnly=readonly,
+            AddToRecentFiles=False,
+            Visible=False,
+            ConfirmConversions=False,
+            Revert=False,
+        )
 
 
 def _norm(text):

@@ -372,9 +372,9 @@ def _process_one(job, src_path):
             os.makedirs(os.path.dirname(out), exist_ok=True)
             split_docx = os.path.join(work_dir, "_split_tmp.docx")
             docx_trim.split_docx_range(docx_path, start, end, boundaries, split_docx)
-            convert.convert_docx_to(split_docx, target_ext, out)
             if _verify_enabled():
-                _verify_output(job, docx_path, out, start, end, work_dir)
+                _verify_output(job, docx_path, split_docx, start, end, work_dir)
+            convert.convert_docx_to(split_docx, target_ext, out)
             outputs.append(name)
         except Exception as e:
             job["errors"].append(f"{os.path.basename(src_path)} pages {start}-{end}: {e}")
