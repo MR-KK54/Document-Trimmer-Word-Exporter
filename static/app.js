@@ -522,8 +522,9 @@ async function resetSession() {
   state.preview = null;
   state.blobs = {};
 
-  $("presetSelect").value = "All Pages (Single Doc)";
+  $("presetSelect").value = "all";
   $("rangeInput").value = "1-end";
+  updateRangeAnalysis();
   $("namingInput").value = "{original_name}_pages_{start_page}-{end_page}";
   $("formatSelect").value = "docx";
   $("engineSelect").value = "trimming";
@@ -551,6 +552,41 @@ async function resetSession() {
   }
 }
 
+/* ---------------- Range Analysis & Dynamic Sync ---------------- */
+
+function updateRangeAnalysis() {
+  const spec = $("rangeInput").value.trim().toLowerCase();
+  const textEl = $("rangeAnalysisText");
+  if (!textEl) return;
+
+  if (spec === "1-end" || spec === "all" || spec === "all pages") {
+    textEl.textContent = "Full Document Cut (Pages 1 to End) into 1 single output file.";
+  } else if (spec === "all-individual") {
+    textEl.textContent = "Individual Page Cut: Every page (Page 1, Page 2, Page 3...) extracted into separate individual files.";
+  } else if (spec === "even") {
+    textEl.textContent = "Even Page Cut: Pages 2, 4, 6, 8... extracted into separate individual files.";
+  } else if (spec === "odd") {
+    textEl.textContent = "Odd Page Cut: Pages 1, 3, 5, 7... extracted into separate individual files.";
+  } else if (/^\d+\s*-\s*(\d+|\bend\b)$/.test(spec)) {
+    const parts = spec.split("-");
+    const s = parts[0].trim();
+    const e = parts[1].trim();
+    if (s === e) {
+      textEl.textContent = `Exact Single Page Cut: Page ${s} extracted into 1 standalone document.`;
+    } else {
+      textEl.textContent = `Exact Range Cut: Pages ${s} to ${e} extracted into 1 document.`;
+    }
+  } else if (/^\d+$/.test(spec)) {
+    textEl.textContent = `Exact Single Page Cut: Page ${spec} extracted into 1 standalone document.`;
+  } else if (spec.includes(",")) {
+    textEl.textContent = `Custom Multi-Range Cut: Specified ranges (${spec}) extracted into separate files/documents.`;
+  } else if (spec) {
+    textEl.textContent = `Custom Range Cut: '${spec}' analyzed and processed.`;
+  } else {
+    textEl.textContent = "Enter a valid page range specification.";
+  }
+}
+
 /* ---------------- Events ---------------- */
 
 $("pickFilesBtn").addEventListener("click", () => fileInput.click());
@@ -569,17 +605,39 @@ dropzone.addEventListener("drop", (e) => {
 
 $("presetSelect").addEventListener("change", () => {
   const v = $("presetSelect").value;
-  if (v === "All Pages (Single Doc)") {
+  if (v === "all" || v === "All Pages (Single Doc)") {
     $("rangeInput").value = "1-end";
     $("namingInput").value = "{original_name}_pages_{start_page}-{end_page}";
-  } else if (v === "Every Page as Separate Document") {
+  } else if (v === "individual" || v === "Every Page as Separate Document") {
     $("rangeInput").value = "all-individual";
     $("namingInput").value = "{original_name}_page_{start_page}";
-  } else if (v === "Even Pages Only") {
+  } else if (v === "even" || v === "Even Pages Only") {
     $("rangeInput").value = "even";
-  } else if (v === "Odd Pages Only") {
+    $("namingInput").value = "{original_name}_page_{start_page}";
+  } else if (v === "odd" || v === "Odd Pages Only") {
     $("rangeInput").value = "odd";
+    $("namingInput").value = "{original_name}_page_{start_page}";
+  } else if (v === "custom" || v === "Custom Page Range") {
+    $("rangeInput").focus();
   }
+  updateRangeAnalysis();
+  schedulePreview();
+});
+
+$("rangeInput").addEventListener("input", () => {
+  const val = $("rangeInput").value.trim().toLowerCase();
+  if (val === "1-end" || val === "all") {
+    $("presetSelect").value = "all";
+  } else if (val === "all-individual") {
+    $("presetSelect").value = "individual";
+  } else if (val === "even") {
+    $("presetSelect").value = "even";
+  } else if (val === "odd") {
+    $("presetSelect").value = "odd";
+  } else {
+    $("presetSelect").value = "custom";
+  }
+  updateRangeAnalysis();
   schedulePreview();
 });
 

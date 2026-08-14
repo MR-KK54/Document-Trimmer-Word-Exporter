@@ -10,7 +10,7 @@ def _expand(spec: str, total_pages: int):
     if not spec:
         raise ValueError("Range spec is empty.")
 
-    if spec in ("all", "all pages", "all-individual", "1-end", "1 - end"):
+    if spec in ("all", "all pages", "1-end", "1 - end"):
         return [(1, total_pages)]
 
     if spec == "all-individual":
