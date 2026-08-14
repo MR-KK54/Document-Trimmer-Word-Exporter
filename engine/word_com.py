@@ -185,7 +185,7 @@ def paginate(docx_path):
                     p = entries[entry_idx][2] if entry_idx < num_entries else (unit_page[-1] if unit_page else 1)
                     unit_page.append(p)
                     continue
-                u_words = _norm(_element_text(node))
+                u_words = _norm(" ".join(_element_text(node)))
                 u_text_str = "".join(u_words)
                 if not u_text_str:
                     p = entries[entry_idx][2] if entry_idx < num_entries else (unit_page[-1] if unit_page else 1)
@@ -230,6 +230,8 @@ def paginate(docx_path):
                 if lst:
                     last = max(last, max(lst))
                 boundaries.append(last)
+            if not boundaries or any(b == -1 for b in boundaries):
+                return None
             return page_count, boundaries
         finally:
             try:
