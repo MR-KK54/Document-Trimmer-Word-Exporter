@@ -107,6 +107,24 @@ def _open_doc(word, path, readonly=True):
         )
 
 
+def get_page_count(docx_path):
+    """Return exact rendered page count of document in MS Word."""
+    with _WORD_LOCK:
+        word = _open_word()
+        doc = None
+        try:
+            doc = _open_doc(word, docx_path, readonly=True)
+            doc.Repaginate()
+            return int(doc.ComputeStatistics(2))
+        finally:
+            if doc is not None:
+                try:
+                    doc.Close(0)
+                except Exception:
+                    pass
+            _shutdown_word(word)
+
+
 def _norm(text):
     text = unicodedata.normalize("NFKC", text or "").lower()
     return re.findall(r"[a-z0-9]+", text)

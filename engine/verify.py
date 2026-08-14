@@ -126,6 +126,12 @@ def _normalize(text):
 
 
 def _page_count(path, out_dir):
+    ext = os.path.splitext(path)[1].lower()
+    if ext == ".docx" and word_com.word_available():
+        try:
+            return word_com.get_page_count(path)
+        except Exception:
+            pass
     pdf = _pdf_for(path, out_dir)
     with pymupdf.open(pdf) as doc:
         return doc.page_count
