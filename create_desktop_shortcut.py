@@ -13,6 +13,7 @@ sc = shell.CreateShortcut(shortcut_path)
 sc.TargetPath = target_exe
 sc.Arguments = f'"{target_script}"'
 sc.WorkingDirectory = BASE_DIR
+sc.IconLocation = os.path.join(BASE_DIR, "app_icon.ico")
 sc.Description = "Document Trimmer & Word Exporter Pro Desktop App"
 sc.Save()
 
@@ -23,6 +24,7 @@ sc2 = shell.CreateShortcut(shortcut_path2)
 sc2.TargetPath = target_exe
 sc2.Arguments = f'"{target_script}"'
 sc2.WorkingDirectory = BASE_DIR
+sc2.IconLocation = os.path.join(BASE_DIR, "app_icon.ico")
 sc2.Description = "Document Trimmer & Word Exporter Pro Desktop App"
 sc2.Save()
 
