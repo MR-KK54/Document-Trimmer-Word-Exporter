@@ -457,12 +457,29 @@ function renderResults(job) {
 
   const single = job.outputs.length === 1;
   const jid = job.job_id || state.jobId;
-  const saveAllBtn = document.createElement("button");
-  saveAllBtn.type = "button";
-  saveAllBtn.className = "btn save-all";
-  saveAllBtn.textContent = single ? "Save File" : "Save All Files (" + job.outputs.length + " files)";
-  saveAllBtn.onclick = () => saveAllFiles(job, single);
-  box.appendChild(saveAllBtn);
+
+  const actionRow = document.createElement("div");
+  actionRow.style.cssText = "display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;";
+
+  if (!single) {
+    const zipBtn = document.createElement("button");
+    zipBtn.type = "button";
+    zipBtn.className = "btn save-all";
+    zipBtn.style.cssText = "background: linear-gradient(135deg, #059669, #10b981); color: white; flex: 1; font-weight: 600;";
+    zipBtn.innerHTML = "📦 Download All as ZIP Archive (.zip)";
+    zipBtn.onclick = () => downloadJobZip(jid);
+    actionRow.appendChild(zipBtn);
+  } else {
+    const saveBtn = document.createElement("button");
+    saveBtn.type = "button";
+    saveBtn.className = "btn save-all";
+    saveBtn.style.cssText = "flex: 1; font-weight: 600;";
+    saveBtn.innerHTML = "💾 Save File As...";
+    saveBtn.onclick = () => downloadViaBlob(jid, job.outputs[0]);
+    actionRow.appendChild(saveBtn);
+  }
+
+  box.appendChild(actionRow);
 
   job.outputs.forEach((name) => {
     const row = document.createElement("div");
@@ -481,6 +498,11 @@ function renderResults(job) {
     row.append(link, prevBtn);
     box.appendChild(row);
   });
+
+  const autoZipCheck = $("autoZipCheck");
+  if (!single && autoZipCheck && autoZipCheck.checked) {
+    setTimeout(() => downloadJobZip(jid), 500);
+  }
 }
 
 async function downloadViaBlob(jobId, name) {
@@ -491,6 +513,27 @@ async function downloadViaBlob(jobId, name) {
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       blob = await resp.blob();
     }
+
+    if (window.showSaveFilePicker) {
+      try {
+        const ext = name.split(".").pop().toLowerCase();
+        const handle = await window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{
+            description: "Exported Document",
+            accept: { "application/octet-stream": ["." + ext] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        appendLog("info", "Saved file to: " + handle.name);
+        return;
+      } catch (err) {
+        if (err.name === "AbortError") return;
+      }
+    }
+
     const urlObj = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = urlObj;
@@ -505,11 +548,45 @@ async function downloadViaBlob(jobId, name) {
   }
 }
 
-function saveAllFiles(job, single) {
-  const jid = job.job_id || state.jobId;
-  job.outputs.forEach((name, i) => {
-    setTimeout(() => downloadViaBlob(jid, name), i * 250);
-  });
+async function downloadJobZip(jobId) {
+  try {
+    appendLog("info", "Packaging output files into ZIP archive...");
+    const resp = await fetch("/api/download-zip/" + jobId);
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const blob = await resp.blob();
+    const zipName = "Exported_Document_Pages.zip";
+
+    if (window.showSaveFilePicker) {
+      try {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: zipName,
+          types: [{
+            description: "ZIP Archive",
+            accept: { "application/zip": [".zip"] }
+          }]
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        appendLog("info", "Saved ZIP archive to: " + handle.name);
+        return;
+      } catch (err) {
+        if (err.name === "AbortError") return;
+      }
+    }
+
+    const urlObj = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = urlObj;
+    a.download = zipName;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(urlObj), 10000);
+  } catch (e) {
+    appendLog("error", "ZIP packaging failed: " + e.message);
+    alert("ZIP packaging failed: " + e.message);
+  }
 }
 
 /* ---------------- Session reset ---------------- */

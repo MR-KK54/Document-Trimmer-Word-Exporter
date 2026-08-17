@@ -237,6 +237,30 @@ def api_download(job_id, name):
     return send_file(path, as_attachment=True, download_name=safe)
 
 
+@app.route("/api/download-zip/<job_id>")
+def api_download_zip(job_id):
+    import zipfile
+    outputs_dir = os.path.join(JOBS_DIR, job_id, "outputs")
+    if not os.path.exists(outputs_dir):
+        return jsonify({"error": "Job outputs directory not found"}), 404
+    files = [f for f in os.listdir(outputs_dir) if os.path.isfile(os.path.join(outputs_dir, f))]
+    if not files:
+        return jsonify({"error": "No output files to package"}), 404
+
+    zip_name = "Exported_Document_Pages.zip"
+    job = JOBS.get(job_id)
+    if job and job.get("files"):
+        base = os.path.splitext(os.path.basename(job["files"][0]))[0]
+        zip_name = f"{base}_exported_pages.zip"
+
+    zip_path = os.path.join(JOBS_DIR, job_id, zip_name)
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zout:
+        for f in files:
+            zout.write(os.path.join(outputs_dir, f), f)
+
+    return send_file(zip_path, as_attachment=True, download_name=zip_name)
+
+
 @app.route("/api/diagnostics")
 def api_diagnostics():
     """Report which rendering engines are detected on this server."""
