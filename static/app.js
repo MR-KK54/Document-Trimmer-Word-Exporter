@@ -457,29 +457,12 @@ function renderResults(job) {
 
   const single = job.outputs.length === 1;
   const jid = job.job_id || state.jobId;
-
-  const actionRow = document.createElement("div");
-  actionRow.style.cssText = "display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;";
-
-  if (!single) {
-    const zipBtn = document.createElement("button");
-    zipBtn.type = "button";
-    zipBtn.className = "btn save-all";
-    zipBtn.style.cssText = "background: linear-gradient(135deg, #059669, #10b981); color: white; flex: 1; font-weight: 600;";
-    zipBtn.innerHTML = "📦 Download All as ZIP Archive (.zip)";
-    zipBtn.onclick = () => downloadJobZip(jid);
-    actionRow.appendChild(zipBtn);
-  } else {
-    const saveBtn = document.createElement("button");
-    saveBtn.type = "button";
-    saveBtn.className = "btn save-all";
-    saveBtn.style.cssText = "flex: 1; font-weight: 600;";
-    saveBtn.innerHTML = "💾 Save File As...";
-    saveBtn.onclick = () => downloadViaBlob(jid, job.outputs[0]);
-    actionRow.appendChild(saveBtn);
-  }
-
-  box.appendChild(actionRow);
+  const saveAllBtn = document.createElement("button");
+  saveAllBtn.type = "button";
+  saveAllBtn.className = "btn save-all";
+  saveAllBtn.textContent = single ? "Save File" : "Save All Files (" + job.outputs.length + " files)";
+  saveAllBtn.onclick = () => saveAllFiles(job, single);
+  box.appendChild(saveAllBtn);
 
   job.outputs.forEach((name) => {
     const row = document.createElement("div");
@@ -498,11 +481,6 @@ function renderResults(job) {
     row.append(link, prevBtn);
     box.appendChild(row);
   });
-
-  const autoZipCheck = $("autoZipCheck");
-  if (!single && autoZipCheck && autoZipCheck.checked) {
-    setTimeout(() => downloadJobZip(jid), 500);
-  }
 }
 
 async function downloadViaBlob(jobId, name) {
@@ -513,27 +491,6 @@ async function downloadViaBlob(jobId, name) {
       if (!resp.ok) throw new Error("HTTP " + resp.status);
       blob = await resp.blob();
     }
-
-    if (window.showSaveFilePicker) {
-      try {
-        const ext = name.split(".").pop().toLowerCase();
-        const handle = await window.showSaveFilePicker({
-          suggestedName: name,
-          types: [{
-            description: "Exported Document",
-            accept: { "application/octet-stream": ["." + ext] }
-          }]
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        appendLog("info", "Saved file to: " + handle.name);
-        return;
-      } catch (err) {
-        if (err.name === "AbortError") return;
-      }
-    }
-
     const urlObj = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = urlObj;
@@ -548,45 +505,11 @@ async function downloadViaBlob(jobId, name) {
   }
 }
 
-async function downloadJobZip(jobId) {
-  try {
-    appendLog("info", "Packaging output files into ZIP archive...");
-    const resp = await fetch("/api/download-zip/" + jobId);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const blob = await resp.blob();
-    const zipName = "Exported_Document_Pages.zip";
-
-    if (window.showSaveFilePicker) {
-      try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: zipName,
-          types: [{
-            description: "ZIP Archive",
-            accept: { "application/zip": [".zip"] }
-          }]
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        appendLog("info", "Saved ZIP archive to: " + handle.name);
-        return;
-      } catch (err) {
-        if (err.name === "AbortError") return;
-      }
-    }
-
-    const urlObj = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = urlObj;
-    a.download = zipName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(urlObj), 10000);
-  } catch (e) {
-    appendLog("error", "ZIP packaging failed: " + e.message);
-    alert("ZIP packaging failed: " + e.message);
-  }
+function saveAllFiles(job, single) {
+  const jid = job.job_id || state.jobId;
+  job.outputs.forEach((name, i) => {
+    setTimeout(() => downloadViaBlob(jid, name), i * 250);
+  });
 }
 
 /* ---------------- Session reset ---------------- */
@@ -806,118 +729,24 @@ if ("serviceWorker" in navigator) {
   });
 }
 
-async function checkSystemInfo() {
-  try {
-    const res = await fetch("/api/system/info");
-    if (!res.ok) return;
-    const data = await res.json();
-    const badge = $("appVersionBadge");
-    if (badge && data.version) {
-      let label = `v${data.version}`;
-      if (data.commit && data.commit !== "unknown") label += ` (${data.commit})`;
-      badge.textContent = label;
-      if (data.has_updates) {
-        badge.style.background = "#d97706";
-        badge.title = "Updates available on GitHub!";
-      }
-    }
-  } catch (e) {}
-}
-
-const updateBtn = $("updateBtn");
-if (updateBtn) {
-  updateBtn.addEventListener("click", async () => {
-    if (!confirm("Pull latest code updates from GitHub and restart local server?")) return;
-    updateBtn.disabled = true;
-    updateBtn.innerHTML = "<span>⏳</span> Updating...";
+const reloadAppBtn = $("reloadAppBtn");
+if (reloadAppBtn) {
+  reloadAppBtn.addEventListener("click", async () => {
+    reloadAppBtn.disabled = true;
+    reloadAppBtn.textContent = "⏳ Reloading...";
     try {
-      const res = await fetch("/api/system/update", { method: "POST" });
+      const res = await fetch("/api/reload", { method: "POST" });
       const data = await res.json();
       if (data.ok) {
-        alert("Update successful! Application is reloading...");
-        setTimeout(() => location.reload(), 2000);
+        window.location.reload();
       } else {
-        alert("Update failed: " + (data.error || "Unknown error"));
-        updateBtn.disabled = false;
-        updateBtn.innerHTML = "<span>🔄</span> Check Updates";
+        alert("Reload status: " + (data.message || "Done"));
       }
-    } catch (err) {
-      alert("Reconnecting to server... Reloading in 3 seconds.");
-      setTimeout(() => location.reload(), 3000);
+    } catch (e) {
+      window.location.reload();
+    } finally {
+      reloadAppBtn.disabled = false;
+      reloadAppBtn.textContent = "🔄 Reload App";
     }
   });
 }
-
-checkSystemInfo();
-
-// DeskcheckSystemInfo();
-
-// --- LOCAL SERVER ADMIN CENTER HANDLERS ---
-async function loadAdminStatus() {
-  try {
-    const res = await fetch("/api/admin/status");
-    if (!res.ok) return;
-    const data = await res.json();
-    $("serverStatusBadge").textContent = `ONLINE (PID: ${data.pid})`;
-    $("serverMemoryBadge").textContent = `${data.memory_mb} MB`;
-    $("serverDbBadge").textContent = `${data.database_size_mb} MB`;
-  } catch (err) {}
-}
-
-async function loadAdminLogs() {
-  try {
-    const res = await fetch("/api/admin/logs");
-    if (!res.ok) return;
-    const data = await res.json();
-    const tbody = $("dbLogTableBody");
-    if (!data.logs || data.logs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="4" style="padding: 12px; text-align: center;" class="muted">No system activity logs yet.</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = data.logs.map(log => `
-      <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-        <td style="padding: 6px;" class="muted">${log.timestamp}</td>
-        <td style="padding: 6px; font-weight: bold; color: ${log.level === 'WARNING' ? '#f59e0b' : '#3b82f6'};">${log.level}</td>
-        <td style="padding: 6px;">${log.message}</td>
-        <td style="padding: 6px;" class="muted">${log.ip}</td>
-      </tr>
-    `).join('');
-  } catch (err) {}
-}
-
-async function createBackup() {
-  try {
-    appendLog("info", "Creating local database backup...");
-    const res = await fetch("/api/admin/backup/create", { method: "POST" });
-    const data = await res.json();
-    if (data.ok) {
-      appendLog("info", `Database backup created: ${data.backup.filename} (${data.backup.size_bytes} bytes)`);
-      loadAdminStatus();
-      loadAdminLogs();
-    }
-  } catch (err) {
-    appendLog("error", "Backup failed: " + err.message);
-  }
-}
-
-if ($("refreshAdminBtn")) $("refreshAdminBtn").addEventListener("click", () => { loadAdminStatus(); loadAdminLogs(); });
-if ($("createBackupBtn")) $("createBackupBtn").addEventListener("click", createBackup);
-
-loadAdminStatus();
-loadAdminLogs();
-
-// Desktop App F5 Keyboard Refresh & Update Control
-window.addEventListener("keydown", async (e) => {
-  if (e.key === "F5" || (e.ctrlKey && e.key.toLowerCase() === "r")) {
-    e.preventDefault();
-    appendLog("info", "F5 Refresh pressed: Checking for updates from server and reloading desktop application...");
-    try {
-      const res = await fetch("/api/system/update", { method: "POST" });
-      const data = await res.json();
-      if (data.ok) {
-        appendLog("info", "Application updated from server: " + (data.message || "OK"));
-      }
-    } catch (err) {}
-    setTimeout(() => location.reload(), 300);
-  }
-});

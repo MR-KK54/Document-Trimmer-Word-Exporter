@@ -11,7 +11,6 @@ Implements the API contract used by static/app.js:
 import os
 import re
 import shutil
-import sys
 import threading
 import time
 import uuid
@@ -21,7 +20,6 @@ from lxml import etree
 
 from engine import convert, naming, paginate, pdf_split, ranges, docx_trim, verify
 from engine.renderer import Renderer
-import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUNTIME_DIR = os.environ.get("RUNTIME_DIR") or os.path.join(BASE_DIR, "runtime")
@@ -236,30 +234,6 @@ def api_download(job_id, name):
     if not os.path.exists(path):
         return jsonify({"error": "Output not found"}), 404
     return send_file(path, as_attachment=True, download_name=safe)
-
-
-@app.route("/api/download-zip/<job_id>")
-def api_download_zip(job_id):
-    import zipfile
-    outputs_dir = os.path.join(JOBS_DIR, job_id, "outputs")
-    if not os.path.exists(outputs_dir):
-        return jsonify({"error": "Job outputs directory not found"}), 404
-    files = [f for f in os.listdir(outputs_dir) if os.path.isfile(os.path.join(outputs_dir, f))]
-    if not files:
-        return jsonify({"error": "No output files to package"}), 404
-
-    zip_name = "Exported_Document_Pages.zip"
-    job = JOBS.get(job_id)
-    if job and job.get("files"):
-        base = os.path.splitext(os.path.basename(job["files"][0]))[0]
-        zip_name = f"{base}_exported_pages.zip"
-
-    zip_path = os.path.join(JOBS_DIR, job_id, zip_name)
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zout:
-        for f in files:
-            zout.write(os.path.join(outputs_dir, f), f)
-
-    return send_file(zip_path, as_attachment=True, download_name=zip_name)
 
 
 @app.route("/api/diagnostics")
@@ -561,6 +535,28 @@ def api_clear_storage():
     return jsonify({"file_count": count, "reclaimed_mb": round(freed / (1024 * 1024), 2)})
 
 
+@app.route("/api/server-status", methods=["GET"])
+def api_server_status():
+    from engine import word_com
+    return jsonify({
+        "status": "running",
+        "version": "2.0.0",
+        "word_available": word_com.word_available(),
+        "mode": "desktop"
+    })
+
+
+@app.route("/api/reload", methods=["POST"])
+def api_reload():
+    import importlib
+    from engine import docx_trim, paginate, verify, word_com
+    importlib.reload(docx_trim)
+    importlib.reload(paginate)
+    importlib.reload(verify)
+    importlib.reload(word_com)
+    return jsonify({"ok": True, "message": "Server state and engine modules reloaded successfully."})
+
+
 @app.errorhandler(413)
 def too_large(e):
     return jsonify({"error": "Uploaded files exceed the 512 MB limit."}), 413
@@ -571,166 +567,6 @@ def not_found(e):
     if request.path.startswith("/api/"):
         return jsonify({"error": "Not found"}), 404
     return send_from_directory(BASE_DIR, "index.html")
-
-
-@app.route("/api/system/info", methods=["GET"])
-def api_system_info():
-    import subprocess
-    commit_hash = "unknown"
-    commit_msg = ""
-    branch = "main"
-    has_updates = False
-    try:
-        commit_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=BASE_DIR, text=True).strip()
-        commit_msg = subprocess.check_output(["git", "log", "-1", "--pretty=%B"], cwd=BASE_DIR, text=True).strip()
-        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=BASE_DIR, text=True).strip()
-        subprocess.run(["git", "fetch"], cwd=BASE_DIR, timeout=10, capture_output=True)
-        status = subprocess.check_output(["git", "status", "-uno"], cwd=BASE_DIR, text=True)
-        if "behind" in status.lower():
-            has_updates = True
-    except Exception:
-        pass
-    return jsonify({
-        "version": "2.5.0",
-        "commit": commit_hash,
-        "commit_msg": commit_msg,
-        "branch": branch,
-        "has_updates": has_updates,
-        "platform": sys.platform,
-        "word_com_available": (lambda: (__import__("engine.word_com", fromlist=["word_com"]).word_available()))()
-    })
-
-
-@app.route("/api/system/update", methods=["POST"])
-def api_system_update():
-    import subprocess
-    try:
-        out = subprocess.check_output(["git", "pull", "origin", "main"], cwd=BASE_DIR, text=True, stderr=subprocess.STDOUT)
-        venv_python = os.path.join(BASE_DIR, ".venv", "Scripts", "python.exe") if sys.platform == "win32" else sys.executable
-        if os.path.exists(venv_python):
-            subprocess.run([venv_python, "-m", "pip", "install", "-r", os.path.join(BASE_DIR, "requirements.txt")], cwd=BASE_DIR, capture_output=True)
-        def deferred_reload():
-            import time
-            time.sleep(1.0)
-            os._exit(0)
-        import threading
-        threading.Thread(target=deferred_reload).start()
-        return jsonify({"ok": True, "message": "Updated successfully from GitHub! Server is reloading...", "git_output": out})
-    except Exception as e:
-        return jsonify({"error": f"Update failed: {e}"}), 500
-
-
-@app.route("/api/system/reload", methods=["POST"])
-def api_system_reload():
-    def deferred_reload():
-        import time
-        time.sleep(1.0)
-        os._exit(0)
-    import threading
-    threading.Thread(target=deferred_reload).start()
-    return jsonify({"ok": True, "message": "Server process reloading..."})
-
-
-# --- LOCAL DATABASE & AUTHENTICATION APIs ---
-
-@app.route("/api/auth/login", methods=["POST"])
-def api_auth_login():
-    data = request.get_json() or {}
-    username = data.get("username", "").strip()
-    password = data.get("password", "").strip()
-    
-    user = db.verify_user(username, password)
-    if not user:
-        db.log_activity("WARNING", f"Failed login attempt for user '{username}' from {request.remote_addr}")
-        return jsonify({"error": "Invalid username or password"}), 401
-    
-    token = db.create_session(user["id"])
-    db.log_activity("INFO", f"User '{username}' logged in successfully from {request.remote_addr}")
-    return jsonify({"ok": True, "token": token, "username": user["username"], "role": user["role"]})
-
-
-@app.route("/api/auth/logout", methods=["POST"])
-def api_auth_logout():
-    token = request.headers.get("X-Auth-Token") or request.args.get("token")
-    if token:
-        db.delete_session(token)
-    return jsonify({"ok": True})
-
-
-@app.route("/api/auth/me", methods=["GET"])
-def api_auth_me():
-    token = request.headers.get("X-Auth-Token") or request.args.get("token")
-    session = db.validate_session(token)
-    if not session:
-        return jsonify({"authenticated": False}), 401
-    return jsonify({"authenticated": True, "username": session["username"], "role": session["role"]})
-
-
-# --- ADMIN CONTROL PANEL & SERVER MANAGEMENT APIs ---
-
-@app.route("/api/admin/status", methods=["GET"])
-def api_admin_status():
-    import psutil
-    process = psutil.Process(os.getpid())
-    mem_info = process.memory_info()
-    
-    db_size = os.path.getsize(db.DB_PATH) if os.path.exists(db.DB_PATH) else 0
-    settings = db.get_settings()
-    
-    return jsonify({
-        "status": "online",
-        "pid": os.getpid(),
-        "memory_mb": round(mem_info.rss / (1024 * 1024), 2),
-        "cpu_percent": psutil.cpu_percent(interval=None),
-        "database_size_bytes": db_size,
-        "database_size_mb": round(db_size / (1024 * 1024), 3),
-        "active_jobs_count": len(JOBS),
-        "settings": settings
-    })
-
-
-@app.route("/api/admin/logs", methods=["GET"])
-def api_admin_logs():
-    logs = db.get_activity_logs(limit=100)
-    return jsonify({"logs": logs})
-
-
-@app.route("/api/admin/jobs", methods=["GET"])
-def api_admin_jobs():
-    jobs = db.get_job_history(limit=50)
-    return jsonify({"jobs": jobs})
-
-
-@app.route("/api/admin/backups", methods=["GET"])
-def api_admin_backups():
-    backups = db.get_backups()
-    return jsonify({"backups": backups})
-
-
-@app.route("/api/admin/backup/create", methods=["POST"])
-def api_admin_backup_create():
-    res = db.create_backup()
-    return jsonify({"ok": True, "backup": res})
-
-
-@app.route("/api/admin/backup/restore", methods=["POST"])
-def api_admin_backup_restore():
-    data = request.get_json() or {}
-    backup_id = data.get("backup_id")
-    ok, msg = db.restore_backup(backup_id)
-    if ok:
-        return jsonify({"ok": True, "message": msg})
-    return jsonify({"error": msg}), 400
-
-
-@app.route("/api/admin/settings", methods=["GET", "POST"])
-def api_admin_settings():
-    if request.method == "POST":
-        data = request.get_json() or {}
-        for k, v in data.items():
-            db.update_setting(k, v)
-        return jsonify({"ok": True, "settings": db.get_settings()})
-    return jsonify({"settings": db.get_settings()})
 
 
 if __name__ == "__main__":

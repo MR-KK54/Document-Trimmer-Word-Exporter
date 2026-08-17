@@ -1,82 +1,57 @@
-import sys, os, time, subprocess, urllib.request
+"""
+Document Trimmer Pro - Desktop Application Launcher & Server Controller
+Launches local server with auto-reload capability and native Desktop App window.
+"""
+import os
+import sys
+import time
+import socket
+import subprocess
+import webbrowser
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-SERVER_URL = "http://127.0.0.1:5000"
+PORT = 5000
+SERVER_URL = f"http://127.0.0.1:{PORT}"
 
-def is_server_running():
-    try:
-        with urllib.request.urlopen(SERVER_URL + "/api/system/info", timeout=1.5) as resp:
-            return resp.status == 200
-    except Exception:
-        return False
+
+def is_port_in_use(port):
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        return s.connect_ex(('127.0.0.1', port)) == 0
+
 
 def start_server():
-    if is_server_running():
-        return None
-    
-    python_exe = os.path.join(BASE_DIR, ".venv", "Scripts", "python.exe") if sys.platform == "win32" and os.path.exists(os.path.join(BASE_DIR, ".venv")) else sys.executable
-    server_script = os.path.join(BASE_DIR, "server.py")
-    
-    proc = subprocess.Popen([python_exe, server_script], cwd=BASE_DIR)
-    
-    for _ in range(30):
-        if is_server_running():
-            return proc
-        time.sleep(0.5)
-    return proc
+    """Start server.py if not already running."""
+    if not is_port_in_use(PORT):
+        print("[Desktop App] Starting local application server on port 5000...")
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        cmd = [sys.executable, os.path.join(BASE_DIR, "server.py")]
+        subprocess.Popen(cmd, cwd=BASE_DIR, env=env)
+        for _ in range(30):
+            if is_port_in_use(PORT):
+                print("[Desktop App] Server is live and ready!")
+                break
+            time.sleep(0.5)
+    else:
+        print("[Desktop App] Server is already running on port 5000.")
 
-def main():
-    server_proc = start_server()
-    
-    # Priority 1: PyQt6 Native Application Window
-    try:
-        from PyQt6.QtCore import QUrl
-        from PyQt6.QtGui import QIcon
-        from PyQt6.QtWidgets import QApplication, QMainWindow
-        from PyQt6.QtWebEngineWidgets import QWebEngineView
 
-        app = QApplication(sys.argv)
-        app.setApplicationName("Document Trimmer & Word Exporter Pro")
-        
-        window = QMainWindow()
-        window.setWindowTitle("Microsoft Word & PDF Page Exporter Pro")
-        window.resize(1280, 850)
-        
-        icon_path = os.path.join(BASE_DIR, "app_icon.ico")
-        if os.path.exists(icon_path):
-            window.setWindowIcon(QIcon(icon_path))
-            app.setWindowIcon(QIcon(icon_path))
+def launch_desktop_window():
+    """Open native desktop application window using Edge App mode or system browser."""
+    print(f"[Desktop App] Opening desktop application window at {SERVER_URL}")
+    edge_paths = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ]
+    edge_exe = next((p for p in edge_paths if os.path.exists(p)), None)
 
-        view = QWebEngineView()
-        view.setUrl(QUrl(SERVER_URL))
-        window.setCentralWidget(view)
-        window.show()
-        
-        ret = app.exec()
-        if server_proc and server_proc.poll() is None:
-            server_proc.terminate()
-        sys.exit(ret)
-        return
-    except Exception as e:
-        print(f"[Native App] PyQt6 fallback ({e}), checking webview...")
+    if edge_exe:
+        cmd = [edge_exe, f"--app={SERVER_URL}", "--name=Document Trimmer Pro"]
+        subprocess.Popen(cmd)
+    else:
+        webbrowser.open(SERVER_URL)
 
-    # Priority 2: PyWebView Native Window
-    try:
-        import webview
-        window = webview.create_window(
-            title="Document Trimmer & Word Exporter Pro",
-            url=SERVER_URL,
-            width=1280,
-            height=850,
-            resizable=True,
-            min_size=(900, 600)
-        )
-        webview.start()
-    except Exception as e:
-        print(f"[Desktop App Error] Could not launch native window: {e}")
-    finally:
-        if server_proc and server_proc.poll() is None:
-            server_proc.terminate()
 
 if __name__ == "__main__":
-    main()
+    start_server()
+    launch_desktop_window()
