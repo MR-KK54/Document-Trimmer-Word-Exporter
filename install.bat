@@ -37,6 +37,12 @@ echo.
 echo Desktop Shortcut "Document Trimmer Pro" created successfully!
 echo Launching Application...
 
-start "" "%APP_DIR%\.venv\Scripts\pythonw.exe" "%APP_DIR%\launch_app.py"
+if exist "%APP_DIR%\Document_Trimmer_Pro\Document_Trimmer_Pro.exe" (
+    start "" "%APP_DIR%\Document_Trimmer_Pro\Document_Trimmer_Pro.exe"
+) else if exist "%APP_DIR%\dist\Document_Trimmer_Pro\Document_Trimmer_Pro.exe" (
+    start "" "%APP_DIR%\dist\Document_Trimmer_Pro\Document_Trimmer_Pro.exe"
+) else (
+    start "" "%APP_DIR%\.venv\Scripts\pythonw.exe" "%APP_DIR%\launch_app.py"
+)
 
 exit /b 0

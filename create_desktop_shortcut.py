@@ -2,8 +2,18 @@ import os, sys, win32com.client
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 desktop = os.path.join(os.path.expanduser("~"), "Desktop")
-target_exe = os.path.join(BASE_DIR, ".venv", "Scripts", "pythonw.exe")
-target_script = os.path.join(BASE_DIR, "launch_app.py")
+
+# Prefer pre-compiled standalone EXE if present, else fallback to pythonw launcher
+exe_path = os.path.join(BASE_DIR, "Document_Trimmer_Pro", "Document_Trimmer_Pro.exe")
+if not os.path.exists(exe_path):
+    exe_path = os.path.join(BASE_DIR, "dist", "Document_Trimmer_Pro", "Document_Trimmer_Pro.exe")
+if not os.path.exists(exe_path):
+    target_exe = os.path.join(BASE_DIR, ".venv", "Scripts", "pythonw.exe")
+    target_script = os.path.join(BASE_DIR, "launch_app.py")
+    args = f'"{target_script}"'
+else:
+    target_exe = exe_path
+    args = ""
 
 shell = win32com.client.Dispatch("WScript.Shell")
 
