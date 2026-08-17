@@ -168,6 +168,56 @@
         <h2>Execution Logs <button type="button" class="chip" id="clearLogsBtn">Clear</button></h2>
         <div id="logConsole" class="log-console"></div>
       </div>
+
+      <!-- Local Server Admin Control Center -->
+      <div class="card" style="grid-column: 1 / -1; margin-top: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 12px; margin-bottom: 16px;">
+          <h2 style="margin: 0; display: flex; align-items: center; gap: 8px;">
+            <span>🖥️</span> Local Server &amp; Database Admin Center
+          </h2>
+          <div style="display: flex; gap: 8px;">
+            <button type="button" class="chip" id="refreshAdminBtn">🔄 Refresh Status</button>
+            <button type="button" class="chip primary" id="createBackupBtn">💾 Backup DB</button>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 20px;">
+          <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <div style="font-size: 0.8rem;" class="muted">SERVER STATUS</div>
+            <div style="font-size: 1.2rem; font-weight: bold; color: #10b981;" id="serverStatusBadge">ONLINE (PID: --)</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <div style="font-size: 0.8rem;" class="muted">MEMORY USAGE</div>
+            <div style="font-size: 1.2rem; font-weight: bold;" id="serverMemoryBadge">0 MB</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <div style="font-size: 0.8rem;" class="muted">LOCAL DATABASE</div>
+            <div style="font-size: 1.2rem; font-weight: bold;" id="serverDbBadge">0.0 MB</div>
+          </div>
+          <div style="background: rgba(255,255,255,0.05); padding: 12px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.1);">
+            <div style="font-size: 0.8rem;" class="muted">SECURITY</div>
+            <div style="font-size: 1.2rem; font-weight: bold; color: #6366f1;">Localhost Only</div>
+          </div>
+        </div>
+
+        <!-- Database Activity Logs Table -->
+        <h3 style="font-size: 1rem; margin-bottom: 8px;" class="muted">Local System Activity Audit Logs</h3>
+        <div style="max-height: 200px; overflow-y: auto; background: rgba(0,0,0,0.3); border-radius: 8px; border: 1px solid rgba(255,255,255,0.1); padding: 8px;">
+          <table style="width: 100%; text-align: left; font-size: 0.85rem; border-collapse: collapse;">
+            <thead>
+              <tr style="border-bottom: 1px solid rgba(255,255,255,0.1); color: #a5b4fc;">
+                <th style="padding: 6px;">Time</th>
+                <th style="padding: 6px;">Level</th>
+                <th style="padding: 6px;">Event Message</th>
+                <th style="padding: 6px;">IP</th>
+              </tr>
+            </thead>
+            <tbody id="dbLogTableBody">
+              <tr><td colspan="4" style="padding: 12px; text-align: center;" class="muted">Loading system logs...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
   </main>
 

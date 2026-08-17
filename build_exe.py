@@ -15,6 +15,7 @@ cmd = [
     "--add-data=sw.js;.",
     "--add-data=app_icon.ico;.",
     "--add-data=favicon.ico;.",
+    "--add-data=db.py;.",
     "--add-data=static;static",
     "--add-data=engine;engine",
     "launch_app.py"

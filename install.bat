@@ -24,26 +24,13 @@ if not exist "%APP_DIR%\.venv" (
     python -m venv "%APP_DIR%\.venv"
 )
 
-echo [2/4] Installing application dependencies...
+echo [2/4] Installing application dependencies and initializing database...
 "%APP_DIR%\.venv\Scripts\python.exe" -m pip install --upgrade pip >nul 2>&1
 "%APP_DIR%\.venv\Scripts\pip.exe" install -r "%APP_DIR%\requirements.txt"
+"%APP_DIR%\.venv\Scripts\python.exe" -c "import db; print('[SUCCESS] Local SQLite Database Initialized!')"
 
-echo [3/4] Creating Desktop Shortcut...
-powershell -NoProfile -ExecutionPolicy Bypass -Command "^
-    $WshShell = New-Object -ComObject WScript.Shell; ^
-    $Shortcut = $WshShell.CreateShortcut([System.IO.Path]::Combine([Environment]::GetFolderPath('Desktop'), 'Document Trimmer Pro.lnk')); ^
-    $Shortcut.TargetPath = '%APP_DIR%\.venv\Scripts\pythonw.exe'; ^
-    $Shortcut.Arguments = '\"%APP_DIR%\launch_app.py\"'; ^
-    $Shortcut.WorkingDirectory = '%APP_DIR%'; ^
-    $Shortcut.Description = 'Document Trimmer & Word Exporter Pro Desktop App'; ^
-    $Shortcut.Save(); ^
-    $StartMenu = [System.IO.Path]::Combine([Environment]::GetFolderPath('StartMenu'), 'Programs', 'Document Trimmer Pro.lnk'); ^
-    $Shortcut2 = $WshShell.CreateShortcut($StartMenu); ^
-    $Shortcut2.TargetPath = '%APP_DIR%\.venv\Scripts\pythonw.exe'; ^
-    $Shortcut2.Arguments = '\"%APP_DIR%\launch_app.py\"'; ^
-    $Shortcut2.WorkingDirectory = '%APP_DIR%'; ^
-    $Shortcut2.Description = 'Document Trimmer & Word Exporter Pro Desktop App'; ^
-    $Shortcut2.Save();"
+echo [3/4] Creating Desktop Shortcut with Custom Logo Icon...
+"%APP_DIR%\.venv\Scripts\python.exe" "%APP_DIR%\create_desktop_shortcut.py"
 
 echo [4/4] Installation Complete!
 echo.

@@ -850,6 +850,62 @@ if (updateBtn) {
 
 checkSystemInfo();
 
+// DeskcheckSystemInfo();
+
+// --- LOCAL SERVER ADMIN CENTER HANDLERS ---
+async function loadAdminStatus() {
+  try {
+    const res = await fetch("/api/admin/status");
+    if (!res.ok) return;
+    const data = await res.json();
+    $("serverStatusBadge").textContent = `ONLINE (PID: ${data.pid})`;
+    $("serverMemoryBadge").textContent = `${data.memory_mb} MB`;
+    $("serverDbBadge").textContent = `${data.database_size_mb} MB`;
+  } catch (err) {}
+}
+
+async function loadAdminLogs() {
+  try {
+    const res = await fetch("/api/admin/logs");
+    if (!res.ok) return;
+    const data = await res.json();
+    const tbody = $("dbLogTableBody");
+    if (!data.logs || data.logs.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="4" style="padding: 12px; text-align: center;" class="muted">No system activity logs yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = data.logs.map(log => `
+      <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+        <td style="padding: 6px;" class="muted">${log.timestamp}</td>
+        <td style="padding: 6px; font-weight: bold; color: ${log.level === 'WARNING' ? '#f59e0b' : '#3b82f6'};">${log.level}</td>
+        <td style="padding: 6px;">${log.message}</td>
+        <td style="padding: 6px;" class="muted">${log.ip}</td>
+      </tr>
+    `).join('');
+  } catch (err) {}
+}
+
+async function createBackup() {
+  try {
+    appendLog("info", "Creating local database backup...");
+    const res = await fetch("/api/admin/backup/create", { method: "POST" });
+    const data = await res.json();
+    if (data.ok) {
+      appendLog("info", `Database backup created: ${data.backup.filename} (${data.backup.size_bytes} bytes)`);
+      loadAdminStatus();
+      loadAdminLogs();
+    }
+  } catch (err) {
+    appendLog("error", "Backup failed: " + err.message);
+  }
+}
+
+if ($("refreshAdminBtn")) $("refreshAdminBtn").addEventListener("click", () => { loadAdminStatus(); loadAdminLogs(); });
+if ($("createBackupBtn")) $("createBackupBtn").addEventListener("click", createBackup);
+
+loadAdminStatus();
+loadAdminLogs();
+
 // Desktop App F5 Keyboard Refresh & Update Control
 window.addEventListener("keydown", async (e) => {
   if (e.key === "F5" || (e.ctrlKey && e.key.toLowerCase() === "r")) {

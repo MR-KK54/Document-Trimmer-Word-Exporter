@@ -5,4 +5,7 @@ pymupdf>=1.24
 gunicorn>=21.2
 pywin32>=306 ; platform_system == "Windows"
 pywebview>=5.0
+psutil>=5.9.0
+PyQt6>=6.6.0
+PyQt6-WebEngine>=6.6.0
 

@@ -21,6 +21,7 @@ from lxml import etree
 
 from engine import convert, naming, paginate, pdf_split, ranges, docx_trim, verify
 from engine.renderer import Renderer
+import db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 RUNTIME_DIR = os.environ.get("RUNTIME_DIR") or os.path.join(BASE_DIR, "runtime")
@@ -628,6 +629,108 @@ def api_system_reload():
     import threading
     threading.Thread(target=deferred_reload).start()
     return jsonify({"ok": True, "message": "Server process reloading..."})
+
+
+# --- LOCAL DATABASE & AUTHENTICATION APIs ---
+
+@app.route("/api/auth/login", methods=["POST"])
+def api_auth_login():
+    data = request.get_json() or {}
+    username = data.get("username", "").strip()
+    password = data.get("password", "").strip()
+    
+    user = db.verify_user(username, password)
+    if not user:
+        db.log_activity("WARNING", f"Failed login attempt for user '{username}' from {request.remote_addr}")
+        return jsonify({"error": "Invalid username or password"}), 401
+    
+    token = db.create_session(user["id"])
+    db.log_activity("INFO", f"User '{username}' logged in successfully from {request.remote_addr}")
+    return jsonify({"ok": True, "token": token, "username": user["username"], "role": user["role"]})
+
+
+@app.route("/api/auth/logout", methods=["POST"])
+def api_auth_logout():
+    token = request.headers.get("X-Auth-Token") or request.args.get("token")
+    if token:
+        db.delete_session(token)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/auth/me", methods=["GET"])
+def api_auth_me():
+    token = request.headers.get("X-Auth-Token") or request.args.get("token")
+    session = db.validate_session(token)
+    if not session:
+        return jsonify({"authenticated": False}), 401
+    return jsonify({"authenticated": True, "username": session["username"], "role": session["role"]})
+
+
+# --- ADMIN CONTROL PANEL & SERVER MANAGEMENT APIs ---
+
+@app.route("/api/admin/status", methods=["GET"])
+def api_admin_status():
+    import psutil
+    process = psutil.Process(os.getpid())
+    mem_info = process.memory_info()
+    
+    db_size = os.path.getsize(db.DB_PATH) if os.path.exists(db.DB_PATH) else 0
+    settings = db.get_settings()
+    
+    return jsonify({
+        "status": "online",
+        "pid": os.getpid(),
+        "memory_mb": round(mem_info.rss / (1024 * 1024), 2),
+        "cpu_percent": psutil.cpu_percent(interval=None),
+        "database_size_bytes": db_size,
+        "database_size_mb": round(db_size / (1024 * 1024), 3),
+        "active_jobs_count": len(JOBS),
+        "settings": settings
+    })
+
+
+@app.route("/api/admin/logs", methods=["GET"])
+def api_admin_logs():
+    logs = db.get_activity_logs(limit=100)
+    return jsonify({"logs": logs})
+
+
+@app.route("/api/admin/jobs", methods=["GET"])
+def api_admin_jobs():
+    jobs = db.get_job_history(limit=50)
+    return jsonify({"jobs": jobs})
+
+
+@app.route("/api/admin/backups", methods=["GET"])
+def api_admin_backups():
+    backups = db.get_backups()
+    return jsonify({"backups": backups})
+
+
+@app.route("/api/admin/backup/create", methods=["POST"])
+def api_admin_backup_create():
+    res = db.create_backup()
+    return jsonify({"ok": True, "backup": res})
+
+
+@app.route("/api/admin/backup/restore", methods=["POST"])
+def api_admin_backup_restore():
+    data = request.get_json() or {}
+    backup_id = data.get("backup_id")
+    ok, msg = db.restore_backup(backup_id)
+    if ok:
+        return jsonify({"ok": True, "message": msg})
+    return jsonify({"error": msg}), 400
+
+
+@app.route("/api/admin/settings", methods=["GET", "POST"])
+def api_admin_settings():
+    if request.method == "POST":
+        data = request.get_json() or {}
+        for k, v in data.items():
+            db.update_setting(k, v)
+        return jsonify({"ok": True, "settings": db.get_settings()})
+    return jsonify({"settings": db.get_settings()})
 
 
 if __name__ == "__main__":
