@@ -11,6 +11,7 @@ Implements the API contract used by static/app.js:
 import os
 import re
 import shutil
+import sys
 import threading
 import time
 import uuid
@@ -545,6 +546,64 @@ def not_found(e):
     if request.path.startswith("/api/"):
         return jsonify({"error": "Not found"}), 404
     return send_from_directory(BASE_DIR, "index.html")
+
+
+@app.route("/api/system/info", methods=["GET"])
+def api_system_info():
+    import subprocess
+    commit_hash = "unknown"
+    commit_msg = ""
+    branch = "main"
+    has_updates = False
+    try:
+        commit_hash = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], cwd=BASE_DIR, text=True).strip()
+        commit_msg = subprocess.check_output(["git", "log", "-1", "--pretty=%B"], cwd=BASE_DIR, text=True).strip()
+        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=BASE_DIR, text=True).strip()
+        subprocess.run(["git", "fetch"], cwd=BASE_DIR, timeout=10, capture_output=True)
+        status = subprocess.check_output(["git", "status", "-uno"], cwd=BASE_DIR, text=True)
+        if "behind" in status.lower():
+            has_updates = True
+    except Exception:
+        pass
+    return jsonify({
+        "version": "2.5.0",
+        "commit": commit_hash,
+        "commit_msg": commit_msg,
+        "branch": branch,
+        "has_updates": has_updates,
+        "platform": sys.platform,
+        "word_com_available": (lambda: (__import__("engine.word_com", fromlist=["word_com"]).word_available()))()
+    })
+
+
+@app.route("/api/system/update", methods=["POST"])
+def api_system_update():
+    import subprocess
+    try:
+        out = subprocess.check_output(["git", "pull", "origin", "main"], cwd=BASE_DIR, text=True, stderr=subprocess.STDOUT)
+        venv_python = os.path.join(BASE_DIR, ".venv", "Scripts", "python.exe") if sys.platform == "win32" else sys.executable
+        if os.path.exists(venv_python):
+            subprocess.run([venv_python, "-m", "pip", "install", "-r", os.path.join(BASE_DIR, "requirements.txt")], cwd=BASE_DIR, capture_output=True)
+        def deferred_reload():
+            import time
+            time.sleep(1.0)
+            os._exit(0)
+        import threading
+        threading.Thread(target=deferred_reload).start()
+        return jsonify({"ok": True, "message": "Updated successfully from GitHub! Server is reloading...", "git_output": out})
+    except Exception as e:
+        return jsonify({"error": f"Update failed: {e}"}), 500
+
+
+@app.route("/api/system/reload", methods=["POST"])
+def api_system_reload():
+    def deferred_reload():
+        import time
+        time.sleep(1.0)
+        os._exit(0)
+    import threading
+    threading.Thread(target=deferred_reload).start()
+    return jsonify({"ok": True, "message": "Server process reloading..."})
 
 
 if __name__ == "__main__":

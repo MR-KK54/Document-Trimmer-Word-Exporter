@@ -728,3 +728,47 @@ if ("serviceWorker" in navigator) {
     navigator.serviceWorker.register("sw.js").catch(() => {});
   });
 }
+
+async function checkSystemInfo() {
+  try {
+    const res = await fetch("/api/system/info");
+    if (!res.ok) return;
+    const data = await res.json();
+    const badge = $("appVersionBadge");
+    if (badge && data.version) {
+      let label = `v${data.version}`;
+      if (data.commit && data.commit !== "unknown") label += ` (${data.commit})`;
+      badge.textContent = label;
+      if (data.has_updates) {
+        badge.style.background = "#d97706";
+        badge.title = "Updates available on GitHub!";
+      }
+    }
+  } catch (e) {}
+}
+
+const updateBtn = $("updateBtn");
+if (updateBtn) {
+  updateBtn.addEventListener("click", async () => {
+    if (!confirm("Pull latest code updates from GitHub and restart local server?")) return;
+    updateBtn.disabled = true;
+    updateBtn.innerHTML = "<span>⏳</span> Updating...";
+    try {
+      const res = await fetch("/api/system/update", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        alert("Update successful! Application is reloading...");
+        setTimeout(() => location.reload(), 2000);
+      } else {
+        alert("Update failed: " + (data.error || "Unknown error"));
+        updateBtn.disabled = false;
+        updateBtn.innerHTML = "<span>🔄</span> Check Updates";
+      }
+    } catch (err) {
+      alert("Reconnecting to server... Reloading in 3 seconds.");
+      setTimeout(() => location.reload(), 3000);
+    }
+  });
+}
+
+checkSystemInfo();

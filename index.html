@@ -19,9 +19,12 @@
       <h1>Microsoft Word &amp; PDF Page Exporter Pro</h1>
       <p>High-Fidelity Page Detection &amp; Range Extraction for Word Documents and PDFs &middot; MS Word COM + PyMuPDF</p>
     </div>
-    <div class="header-actions">
+    <div class="header-actions" style="display: flex; gap: 8px; align-items: center;">
       <button type="button" class="btn reset" id="resetBtn">Clear Session</button>
-      <div class="server-badge">Live Web App</div>
+      <button type="button" class="btn" id="updateBtn" title="Pull latest code from GitHub & reload app server" style="background: linear-gradient(135deg, #059669, #10b981); color: white; border: none; font-weight: 600; cursor: pointer; padding: 8px 14px; border-radius: 6px; font-size: 0.88rem; display: inline-flex; align-items: center; gap: 6px;">
+        <span>🔄</span> Check Updates
+      </button>
+      <div class="server-badge" id="appVersionBadge" style="background: rgba(255, 255, 255, 0.1); padding: 6px 12px; border-radius: 6px; font-size: 0.85rem; font-family: monospace;">v2.5.0 Desktop</div>
     </div>
   </header>
 
