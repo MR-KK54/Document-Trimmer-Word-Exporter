@@ -849,3 +849,19 @@ if (updateBtn) {
 }
 
 checkSystemInfo();
+
+// Desktop App F5 Keyboard Refresh & Update Control
+window.addEventListener("keydown", async (e) => {
+  if (e.key === "F5" || (e.ctrlKey && e.key.toLowerCase() === "r")) {
+    e.preventDefault();
+    appendLog("info", "F5 Refresh pressed: Checking for updates from server and reloading desktop application...");
+    try {
+      const res = await fetch("/api/system/update", { method: "POST" });
+      const data = await res.json();
+      if (data.ok) {
+        appendLog("info", "Application updated from server: " + (data.message || "OK"));
+      }
+    } catch (err) {}
+    setTimeout(() => location.reload(), 300);
+  }
+});
